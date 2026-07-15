@@ -21,21 +21,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      authService.getCurrentUser()
-        .then((data) => {
-          setUser(data.user);
-        })
-        .catch(() => {
+    
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    // Only attempt to fetch if token exists
+    authService.getCurrentUser()
+      .then((data) => {
+        setUser(data.user);
+        setLoading(false);
+      })
+      .catch((error) => {
+        // If token is invalid/expired, clear it
+        console.error('Error fetching current user:', error);
+        if (error.response?.status === 401 || error.response?.status === 422) {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
+        }
+        setLoading(false);
+      });
   }, []);
 
   const login = async (username: string, password: string) => {

@@ -20,6 +20,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Only clear token for 401 (Unauthorized)
+    // 422 means bad header format – usually a frontend issue, not a token expiry
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
