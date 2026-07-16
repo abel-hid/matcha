@@ -14,10 +14,11 @@ from app.utils import (
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
+    print("Authorization header:", request.headers.get('Authorization'))
+    print("JWT Identity:", get_jwt_identity())
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     if not user:

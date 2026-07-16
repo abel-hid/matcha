@@ -12,7 +12,7 @@ class Config:
     
     # JWT
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-    JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour
+    JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 24 * 7  #  7 days
     JWT_REFRESH_TOKEN_EXPIRES = 86400  # 24 hours
     
     # Mail

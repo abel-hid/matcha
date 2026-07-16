@@ -1,4 +1,5 @@
 import axios from 'axios';
+import Cookies from 'js-cookie';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -10,7 +11,8 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = Cookies.get('token');
+  console.log('Interceptor - token:', token);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -20,11 +22,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only clear token for 401 (Unauthorized)
-    // 422 means bad header format – usually a frontend issue, not a token expiry
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      // Clear cookies on unauthorized
+      Cookies.remove('token');
+      Cookies.remove('refreshToken');
+      Cookies.remove('user');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -58,12 +60,19 @@ export const authService = {
   },
 
   logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    Cookies.remove('token');
+    Cookies.remove('refreshToken');
+    Cookies.remove('user');
   },
 
   getCurrentUser: async () => {
-    const response = await api.get('/api/auth/me');
+    const token = Cookies.get('token');
+    const response = await api.get('/api/auth/me' ,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
     return response.data;
   },
 };

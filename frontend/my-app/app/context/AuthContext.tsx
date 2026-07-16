@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService } from '@/app/services/api';
 import { User } from '@/app/types';
+import Cookies from 'js-cookie';
 
 interface AuthContextType {
   user: User | null;
@@ -20,25 +21,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = Cookies.get('token');
     
     if (!token) {
       setLoading(false);
       return;
     }
 
-    // Only attempt to fetch if token exists
+    console.log("token from cookie:", token);
     authService.getCurrentUser()
       .then((data) => {
+        console.log("Current user data:", data);
         setUser(data.user);
         setLoading(false);
       })
       .catch((error) => {
-        // If token is invalid/expired, clear it
         console.error('Error fetching current user:', error);
         if (error.response?.status === 401 || error.response?.status === 422) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
+          // Invalid token – clear cookies
+          // Cookies.remove('token');
+          // Cookies.remove('refreshToken');
+          // Cookies.remove('user');
         }
         setLoading(false);
       });
@@ -46,8 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const data = await authService.login(username, password);
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
+    // Set cookies with 7-day expiry (matching backend expiry if you increased it)
+    Cookies.set('token', data.token, { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    Cookies.set('refreshToken', data.refreshToken, { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    Cookies.set('user', JSON.stringify(data.user), { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     setUser(data.user);
   };
 
