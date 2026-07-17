@@ -14,18 +14,25 @@ from app.utils import (
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
+
+def get_current_user_or_404():
+    """Helper: resolve the JWT identity (always a string) back to a User row."""
+    user_id = get_jwt_identity()
+    if user_id is None:
+        return None
+    return User.query.get(int(user_id))
+
+
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    print("Authorization header:", request.headers.get('Authorization'))
-    print("JWT Identity:", get_jwt_identity())
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
     return jsonify({
         'user': user.to_dict(include_private=True)
     }), 200
+
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -63,7 +70,7 @@ def register():
     db.session.commit()
 
     try:
-        send_verification_email(user)
+        send_verification_email(user) 
     except Exception as e:
         print(f"Email error: {e}")
 
@@ -71,6 +78,7 @@ def register():
         'message': 'User registered successfully. Please verify your email.',
         'user': user.to_dict()
     }), 201
+
 
 @auth_bp.route('/verify/<token>', methods=['GET'])
 def verify_email(token):
@@ -89,6 +97,7 @@ def verify_email(token):
     db.session.commit()
 
     return jsonify({'message': 'Email verified successfully'}), 200
+
 
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
@@ -112,6 +121,7 @@ def resend_verification():
 
     return jsonify({'message': 'Verification email sent'}), 200
 
+
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -125,8 +135,8 @@ def login():
         return jsonify({'message': 'Invalid credentials'}), 401
 
     # Uncomment when email verification is fully set up
-    # if not user.is_verified:
-    #     return jsonify({'message': 'Please verify your email first'}), 401
+    if not user.is_verified:
+        return jsonify({'message': 'Please verify your email first'}), 401
 
     # Update online status
     user.is_online = True
@@ -134,29 +144,28 @@ def login():
     db.session.commit()
 
     return jsonify({
-        'token': create_access_token(identity=user.id),
-        'refreshToken': create_refresh_token(identity=user.id),
+        'token': create_access_token(identity=str(user.id)),
+        'refreshToken': create_refresh_token(identity=str(user.id)),
         'user': user.to_dict(include_private=True)
     }), 200
+
 
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-
+    user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
     return jsonify({
-        'token': create_access_token(identity=user.id)
+        'token': create_access_token(identity=str(user.id))
     }), 200
+
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    user = get_current_user_or_404()
 
     if user:
         user.is_online = False
@@ -164,6 +173,7 @@ def logout():
         db.session.commit()
 
     return jsonify({'message': 'Logged out successfully'}), 200
+
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -175,15 +185,16 @@ def forgot_password():
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        # Do not reveal if user exists
         return jsonify({'message': 'Password reset email sent if account exists'}), 200
 
     try:
         send_password_reset_email(user)
-    except Exception:
+    except Exception as e:
+        print(f"[forgot-password] failed to send email to {user.email}: {e}")
         return jsonify({'message': 'Failed to send email'}), 500
 
     return jsonify({'message': 'Password reset email sent'}), 200
+
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
@@ -198,15 +209,40 @@ def reset_password():
     if not is_valid:
         return jsonify({'message': msg}), 400
 
-    email = verify_reset_token(token)
-    if not email:
-        return jsonify({'message': 'Invalid or expired token'}), 400
+    payload, reason = verify_reset_token(token)
+    if not payload:
+        message = 'This reset link has expired' if reason == 'expired' else 'This reset link is invalid'
+        return jsonify({'message': message, 'reason': reason}), 400
 
-    user = User.query.filter_by(email=email).first()
+    user = User.query.filter_by(email=payload['email']).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
+    if payload.get('v') != user.token_version:
+        return jsonify({
+            'message': 'This reset link has already been used',
+            'reason': 'used'
+        }), 400
+
     user.set_password(new_password)
+    user.token_version += 1
     db.session.commit()
 
     return jsonify({'message': 'Password reset successfully'}), 200
+
+
+
+@auth_bp.route('/verify-reset-token/<token>', methods=['GET'])
+def verify_reset_token_route(token):
+    payload, reason = verify_reset_token(token)
+    if not payload:
+        return jsonify({'valid': False, 'reason': reason}), 400
+
+    user = User.query.filter_by(email=payload['email']).first()
+    if not user:
+        return jsonify({'valid': False, 'reason': 'invalid'}), 400
+
+    if payload.get('v') != user.token_version:
+        return jsonify({'valid': False, 'reason': 'used'}), 400
+
+    return jsonify({'valid': True}), 200

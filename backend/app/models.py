@@ -22,6 +22,9 @@ class User(db.Model):
     biography = db.Column(db.Text)
     profile_picture = db.Column(db.String(255))
     fame_rating = db.Column(db.Float, default=0)
+    
+    # reset password token version for invalidating old tokens
+    token_version = db.Column(db.Integer, default=0, nullable=False)
 
     def set_password(self, password):
         self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')

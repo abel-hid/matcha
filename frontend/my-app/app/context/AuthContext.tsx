@@ -16,43 +16,49 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const COOKIE_OPTS = {
+  expires: 7,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+};
+
+function clearAuthCookies() {
+  Cookies.remove('token');
+  Cookies.remove('refreshToken');
+  Cookies.remove('user');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = Cookies.get('token');
-    
+
     if (!token) {
       setLoading(false);
       return;
     }
 
-    console.log("token from cookie:", token);
     authService.getCurrentUser()
       .then((data) => {
-        console.log("Current user data:", data);
         setUser(data.user);
         setLoading(false);
       })
       .catch((error) => {
-        console.error('Error fetching current user:', error);
         if (error.response?.status === 401 || error.response?.status === 422) {
-          // Invalid token – clear cookies
-          // Cookies.remove('token');
-          // Cookies.remove('refreshToken');
-          // Cookies.remove('user');
+          clearAuthCookies();
         }
+        setUser(null);
         setLoading(false);
       });
   }, []);
 
   const login = async (username: string, password: string) => {
     const data = await authService.login(username, password);
-    // Set cookies with 7-day expiry (matching backend expiry if you increased it)
-    Cookies.set('token', data.token, { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-    Cookies.set('refreshToken', data.refreshToken, { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-    Cookies.set('user', JSON.stringify(data.user), { expires: 7, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    Cookies.set('token', data.token, COOKIE_OPTS);
+    Cookies.set('refreshToken', data.refreshToken, COOKIE_OPTS);
+    Cookies.set('user', JSON.stringify(data.user), COOKIE_OPTS);
     setUser(data.user);
   };
 

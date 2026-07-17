@@ -57,4 +57,4 @@ echo -e "${GREEN}✅ Database is ready!${NC}"
 echo -e "${GREEN}✅ Starting Flask server...${NC}"
 echo -e "${GREEN}🌐 Server running at http://localhost:5000${NC}"
 echo -e "${GREEN}🛑 Press Ctrl+C to stop${NC}"
-python run.py
+python3 run.py

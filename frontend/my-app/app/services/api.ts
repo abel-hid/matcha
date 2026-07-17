@@ -12,7 +12,6 @@ export const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = Cookies.get('token');
-  console.log('Interceptor - token:', token);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -22,12 +21,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Clear cookies on unauthorized
+    if (error.response?.status === 401 || error.response?.status === 422) {
       Cookies.remove('token');
       Cookies.remove('refreshToken');
       Cookies.remove('user');
-      window.location.href = '/login';
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -66,13 +66,12 @@ export const authService = {
   },
 
   getCurrentUser: async () => {
-    const token = Cookies.get('token');
-    const response = await api.get('/api/auth/me' ,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const response = await api.get('/api/auth/me');
+    return response.data;
+  },
+
+  verifyResetToken: async (token: string) => {
+    const response = await api.get(`/api/auth/verify-reset-token/${token}`);
     return response.data;
   },
 };

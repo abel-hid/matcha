@@ -1,17 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import AuthShowcase from './Authshowcase'
 
+
+
+// #15101C
+// #FF4D7E
+// #F2C879 
 export default function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace('/');
+    }
+  }, [authLoading, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +32,7 @@ export default function LoginForm() {
 
     try {
       await login(username, password);
-      router.push('/'); // Redirect to dashboard
+      router.push('/');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid credentials');
     } finally {
@@ -28,22 +40,33 @@ export default function LoginForm() {
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
-        <div>
-          <h2 className="text-3xl font-bold text-center text-gray-900">
-            Welcome Back
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to your account
-          </p>
-        </div>
+  if (authLoading || user) {
+    return <div className="min-h-screen bg-[#15101C]" />;
+  }
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
+  return (
+    <div className="flex min-h-screen bg-[#15101C]">
+      <AuthShowcase
+        eyebrow="Members"
+        headline="Good things start with a conversation."
+        subhead="Sign back in and pick up where you left off."
+      />
+
+      <div className="flex flex-1 items-center justify-center px-6 py-14">
+        <div className="w-full max-w-sm">
+          <div className="mb-9">
+            <h1 className="font-serif text-3xl text-[#F5EFE9]">Welcome back</h1>
+            <p className="mt-2 text-sm text-[#9C8FA8]">
+              Sign in to your account to continue.
+            </p>
+          </div>
+
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="username"
+                className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]"
+              >
                 Username
               </label>
               <input
@@ -52,13 +75,17 @@ export default function LoginForm() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoComplete="username"
+                className="w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30"
                 placeholder="Enter your username"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]"
+              >
                 Password
               </label>
               <input
@@ -67,39 +94,43 @@ export default function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30"
                 placeholder="Enter your password"
               />
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link href="/forgot-password" className="text-blue-600 hover:text-blue-500">
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-[#9C8FA8] transition hover:text-[#F2C879]"
+              >
                 Forgot password?
               </Link>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition duration-200 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
+            {error && (
+              <div className="rounded-lg border border-[#FF6B6B]/30 bg-[#FF6B6B]/10 px-3 py-2 text-sm text-[#FF8A80]">
+                {error}
+              </div>
+            )}
 
-          <p className="text-center text-sm text-gray-600">
-            Don't have an account?{' '}
-            <Link href="/signup" className="text-blue-600 hover:text-blue-500 font-medium">
-              Sign up
-            </Link>
-          </p>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-[#FF4D7E] py-3 font-medium text-[#15101C] transition hover:bg-[#FF6A93] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Signing in…' : 'Sign in'}
+            </button>
+
+            <p className="text-center text-sm text-[#9C8FA8]">
+              Don&apos;t have an account?{' '}
+              <Link href="/signup" className="font-medium text-[#F2C879] hover:text-[#F5D998]">
+                Sign up
+              </Link>
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   );

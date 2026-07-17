@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useAuth } from '@/app/context/AuthContext';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react'
+import { useAuth } from '@/app/context/AuthContext'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod';
+import AuthShowcase from './Authshowcase'
+import {useEffect} from 'react'
 
 const signupSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -22,12 +24,25 @@ const signupSchema = z.object({
 
 type SignupFormData = z.infer<typeof signupSchema>;
 
+const inputClasses =
+  'mt-1.5 w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30';
+
+const labelClasses = 'block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]';
+
 export default function SignupForm() {
   const { signup } = useAuth();
   const router = useRouter();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { user, loading: authLoading, login } = useAuth();
+
+  
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace('/');
+    }
+  }, [authLoading, user, router]);
 
   const {
     register,
@@ -44,7 +59,6 @@ export default function SignupForm() {
     try {
       await signup(data);
       setSuccess(true);
-      // Redirect to login after 3 seconds
       setTimeout(() => router.push('/login'), 3000);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Registration failed');
@@ -52,18 +66,31 @@ export default function SignupForm() {
       setLoading(false);
     }
   };
+  if (authLoading || user) {
+    return <div className="min-h-screen bg-[#15101C]" />;
+  }
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full p-8 bg-white rounded-xl shadow-lg text-center">
-          <div className="text-green-500 text-6xl mb-4">✅</div>
-          <h2 className="text-2xl font-bold text-gray-900">Registration Successful!</h2>
-          <p className="mt-2 text-gray-600">
-            Please check your email to verify your account.
+      <div className="flex min-h-screen items-center justify-center bg-[#15101C] px-6">
+        <div className="w-full max-w-sm rounded-xl border border-[#332844] bg-[#1E1728] p-8 text-center">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF4D7E]/15">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 13l4 4L19 7"
+                stroke="#FF4D7E"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 className="font-serif text-2xl text-[#F5EFE9]">You&apos;re in.</h2>
+          <p className="mt-2 text-sm text-[#9C8FA8]">
+            Check your email to verify your account.
           </p>
-          <p className="mt-4 text-sm text-gray-500">
-            Redirecting to login...
+          <p className="mt-5 text-xs uppercase tracking-wide text-[#6E6180]">
+            Redirecting to login…
           </p>
         </div>
       </div>
@@ -71,137 +98,129 @@ export default function SignupForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
-        <div>
-          <h2 className="text-3xl font-bold text-center text-gray-900">
-            Create Account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Join the community
-          </p>
-        </div>
+    <div className="flex min-h-screen bg-[#15101C]">
+      <AuthShowcase
+        eyebrow="Join"
+        headline="Where real conversations start."
+        subhead="Create an account and find your people."
+      />
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-4">
+      <div className="flex flex-1 items-center justify-center px-6 py-14">
+        <div className="w-full max-w-sm">
+          <div className="mb-8">
+            <h1 className="font-serif text-3xl text-[#F5EFE9]">Create account</h1>
+            <p className="mt-2 text-sm text-[#9C8FA8]">Join the community.</p>
+          </div>
+
+          <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                Username
-              </label>
+              <label htmlFor="username" className={labelClasses}>Username</label>
               <input
                 id="username"
                 type="text"
                 {...register('username')}
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className={inputClasses}
                 placeholder="Choose a username"
               />
               {errors.username && (
-                <p className="text-red-500 text-sm mt-1">{errors.username.message}</p>
+                <p className="mt-1 text-sm text-[#FF8A80]">{errors.username.message}</p>
               )}
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
+              <label htmlFor="email" className={labelClasses}>Email</label>
               <input
                 id="email"
                 type="email"
                 {...register('email')}
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className={inputClasses}
                 placeholder="Enter your email"
               />
               {errors.email && (
-                <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
+                <p className="mt-1 text-sm text-[#FF8A80]">{errors.email.message}</p>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                  First Name
-                </label>
+                <label htmlFor="firstName" className={labelClasses}>First name</label>
                 <input
                   id="firstName"
                   type="text"
                   {...register('firstName')}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className={inputClasses}
                   placeholder="John"
                 />
                 {errors.firstName && (
-                  <p className="text-red-500 text-sm mt-1">{errors.firstName.message}</p>
+                  <p className="mt-1 text-sm text-[#FF8A80]">{errors.firstName.message}</p>
                 )}
               </div>
 
               <div>
-                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                  Last Name
-                </label>
+                <label htmlFor="lastName" className={labelClasses}>Last name</label>
                 <input
                   id="lastName"
                   type="text"
                   {...register('lastName')}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className={inputClasses}
                   placeholder="Doe"
                 />
                 {errors.lastName && (
-                  <p className="text-red-500 text-sm mt-1">{errors.lastName.message}</p>
+                  <p className="mt-1 text-sm text-[#FF8A80]">{errors.lastName.message}</p>
                 )}
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
+              <label htmlFor="password" className={labelClasses}>Password</label>
               <input
                 id="password"
                 type="password"
                 {...register('password')}
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className={inputClasses}
                 placeholder="Create a password"
               />
               {errors.password && (
-                <p className="text-red-500 text-sm mt-1">{errors.password.message}</p>
+                <p className="mt-1 text-sm text-[#FF8A80]">{errors.password.message}</p>
               )}
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
-              </label>
+              <label htmlFor="confirmPassword" className={labelClasses}>Confirm password</label>
               <input
                 id="confirmPassword"
                 type="password"
                 {...register('confirmPassword')}
-                className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className={inputClasses}
                 placeholder="Confirm your password"
               />
               {errors.confirmPassword && (
-                <p className="text-red-500 text-sm mt-1">{errors.confirmPassword.message}</p>
+                <p className="mt-1 text-sm text-[#FF8A80]">{errors.confirmPassword.message}</p>
               )}
             </div>
-          </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
+            {error && (
+              <div className="rounded-lg border border-[#FF6B6B]/30 bg-[#FF6B6B]/10 px-3 py-2 text-sm text-[#FF8A80]">
+                {error}
+              </div>
+            )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition duration-200 disabled:opacity-50"
-          >
-            {loading ? 'Creating account...' : 'Create Account'}
-          </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-[#FF4D7E] py-3 font-medium text-[#15101C] transition hover:bg-[#FF6A93] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Creating account…' : 'Create account'}
+            </button>
 
-          <p className="text-center text-sm text-gray-600">
-            Already have an account?{' '}
-            <Link href="/login" className="text-blue-600 hover:text-blue-500 font-medium">
-              Sign in
-            </Link>
-          </p>
-        </form>
+            <p className="text-center text-sm text-[#9C8FA8]">
+              Already have an account?{' '}
+              <Link href="/login" className="font-medium text-[#F2C879] hover:text-[#F5D998]">
+                Sign in
+              </Link>
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   );

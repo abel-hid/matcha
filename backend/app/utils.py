@@ -57,20 +57,26 @@ def verify_verification_token(token, expiration=3600):
         return None
 
 # Generate password reset token
-def generate_reset_token(email):
-    """Generate password reset token"""
+def generate_reset_token(email, token_version):
+    """Generate a single-use password reset token, tied to the user's current token_version"""
     serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
-    return serializer.dumps(email, salt='password-reset')
+    return serializer.dumps({'email': email, 'v': token_version}, salt='password-reset')
 
 # Verify password reset token
 def verify_reset_token(token, expiration=3600):
-    """Verify password reset token"""
+    """
+    Verify password reset token.
+    Returns (payload, None) on success, or (None, reason) on failure,
+    where reason is 'expired' or 'invalid'.
+    """
     serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
     try:
-        email = serializer.loads(token, salt='password-reset', max_age=expiration)
-        return email
-    except (SignatureExpired, BadSignature):
-        return None
+        data = serializer.loads(token, salt='password-reset', max_age=expiration)
+        return data, None
+    except SignatureExpired:
+        return None, 'expired'
+    except BadSignature:
+        return None, 'invalid'
 
 # Send email
 def send_email(subject, recipients, html_body, text_body=None):
@@ -107,7 +113,7 @@ def send_verification_email(user):
 # Send password reset email
 def send_password_reset_email(user):
     """Send password reset link"""
-    token = generate_reset_token(user.email)
+    token = generate_reset_token(user.email, user.token_version)
     reset_url = f"{Config.FRONTEND_URL}/reset-password?token={token}"
     
     html = f"""
