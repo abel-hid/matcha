@@ -75,3 +75,112 @@ export const authService = {
     return response.data;
   },
 };
+
+
+export const profileService = {
+  getProfile: async () => {
+    const response = await api.get('/api/profile');
+    return response.data;
+  },
+
+  updateProfile: async (data: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    gender?: string;
+    sexualPreferences?: string;
+    biography?: string;
+  }) => {
+    const response = await api.put('/api/profile', data);
+    return response.data;
+  },
+
+  getAllTags: async () => {
+    const response = await api.get('/api/profile/tags');
+    return response.data;
+  },
+
+  setMyTags: async (tags: string[]) => {
+    const response = await api.put('/api/profile/tags', { tags });
+    return response.data;
+  },
+
+  uploadPhoto: async (file: File) => {
+    const formData = new FormData();
+    formData.append('photo', file);
+    const response = await api.post('/api/profile/photos', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deletePhoto: async (photoId: number) => {
+    const response = await api.delete(`/api/profile/photos/${photoId}`);
+    return response.data;
+  },
+
+  setPrimaryPhoto: async (photoId: number) => {
+    const response = await api.put(`/api/profile/photos/${photoId}/primary`);
+    return response.data;
+  },
+
+  updateLocationGps: async (latitude: number, longitude: number, locationName?: string) => {
+    const response = await api.put('/api/profile/location', {
+      gpsConsent: true,
+      latitude,
+      longitude,
+      locationName,
+    });
+    return response.data;
+  },
+
+  updateLocationManual: async (locationName: string) => {
+    const response = await api.put('/api/profile/location', {
+      gpsConsent: false,
+      locationName,
+    });
+    return response.data;
+  },
+
+  getViewers: async () => {
+    const response = await api.get('/api/profile/viewers');
+    return response.data;
+  },
+
+  getLikes: async () => {
+    const response = await api.get('/api/profile/likes');
+    return response.data;
+  },
+};
+
+export const usersService = {
+  getUser: async (userId: number) => {
+    const response = await api.get(`/api/users/${userId}`);
+    return response.data;
+  },
+ 
+  like: async (userId: number) => {
+    const response = await api.post(`/api/users/${userId}/like`);
+    return response.data;
+  },
+ 
+  unlike: async (userId: number) => {
+    const response = await api.delete(`/api/users/${userId}/like`);
+    return response.data;
+  },
+ 
+  block: async (userId: number) => {
+    const response = await api.post(`/api/users/${userId}/block`);
+    return response.data;
+  },
+ 
+  unblock: async (userId: number) => {
+    const response = await api.delete(`/api/users/${userId}/block`);
+    return response.data;
+  },
+ 
+  report: async (userId: number) => {
+    const response = await api.post(`/api/users/${userId}/report`);
+    return response.data;
+  },
+};
