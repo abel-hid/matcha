@@ -29,7 +29,7 @@ class Config:
     # Upload
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5MB
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
     
     # Frontend URL for email links
     FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
