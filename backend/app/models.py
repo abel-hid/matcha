@@ -1,316 +1,446 @@
-from datetime import datetime
-from flask_jwt_extended import create_access_token, create_refresh_token
+"""
+Data access layer — no ORM. Each function runs a parameterized SQL query
+and returns plain dicts (or lists of dicts) instead of model instances.
+"""
+from datetime import datetime, timedelta
 import bcrypt
-from app.extensions import db
+from flask_jwt_extended import create_access_token, create_refresh_token
+
+from app.db import query_one, query_all, execute
 
 MAX_PHOTOS_PER_USER = 5
 
-# Association table for many-to-many relationships
-user_tags = db.Table('user_tags',
-    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('tag_id', db.Integer, db.ForeignKey('tags.id'), primary_key=True)
-)
 
-user_likes = db.Table('user_likes',
-    db.Column('liker_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('liked_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('created_at', db.DateTime, default=datetime.utcnow)
-)
+# ---------------------------------------------------------------- passwords
 
-user_blocks = db.Table('user_blocks',
-    db.Column('blocker_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('blocked_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('created_at', db.DateTime, default=datetime.utcnow)
-)
-
-user_views = db.Table('user_views',
-    db.Column('viewer_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('viewed_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('viewed_at', db.DateTime, default=datetime.utcnow)
-)
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
-class User(db.Model):
-    __tablename__ = 'users'
+def check_password(password, password_hash):
+    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=False)
 
-    # Profile fields
-    gender = db.Column(db.String(20))
-    sexual_preferences = db.Column(db.String(20))
-    biography = db.Column(db.Text)
-    profile_picture = db.Column(db.String(255))  # denormalized: kept in sync with the primary Photo's filename
-    fame_rating = db.Column(db.Float, default=0)
+def get_tokens_for_user(user_id):
+    identity = str(user_id)
+    return create_access_token(identity=identity), create_refresh_token(identity=identity)
 
-    # Location
-    latitude = db.Column(db.Float)
-    longitude = db.Column(db.Float)
-    location_name = db.Column(db.String(100))
-    location_updated_at = db.Column(db.DateTime)
-    # True once the user has explicitly agreed to GPS-based location tracking.
-    # If False, location must come from manual entry (location_name / geocoded lat-lng).
-    gps_consent = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Status
-    is_verified = db.Column(db.Boolean, default=False)
-    is_online = db.Column(db.Boolean, default=False)
-    last_activity = db.Column(db.DateTime, default=datetime.utcnow)
+# --------------------------------------------------------------------- users
 
-    # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+def get_user_by_id(user_id):
+    return query_one("SELECT * FROM users WHERE id = %s", (user_id,))
 
-    token_version = db.Column(db.Integer, default=0, nullable=False)
 
-    # Relationships
-    tags = db.relationship('Tag', secondary=user_tags, lazy='subquery',
-                          backref=db.backref('users', lazy=True))
+def get_user_by_username(username):
+    return query_one("SELECT * FROM users WHERE username = %s", (username,))
 
-    photos = db.relationship('Photo', backref='user', lazy='dynamic',
-                             cascade='all, delete-orphan',
-                             order_by='Photo.position')
 
-    # Self-referential relationships
-    liked_by = db.relationship('User', secondary=user_likes,
-                               primaryjoin=(user_likes.c.liked_id == id),
-                               secondaryjoin=(user_likes.c.liker_id == id),
-                               lazy='dynamic')
+def get_user_by_email(email):
+    return query_one("SELECT * FROM users WHERE email = %s", (email,))
 
-    liked_users = db.relationship('User', secondary=user_likes,
-                                  primaryjoin=(user_likes.c.liker_id == id),
-                                  secondaryjoin=(user_likes.c.liked_id == id),
-                                  lazy='dynamic')
 
-    blocked_by = db.relationship('User', secondary=user_blocks,
-                                 primaryjoin=(user_blocks.c.blocked_id == id),
-                                 secondaryjoin=(user_blocks.c.blocker_id == id),
-                                 lazy='dynamic')
-
-    blocked_users = db.relationship('User', secondary=user_blocks,
-                                    primaryjoin=(user_blocks.c.blocker_id == id),
-                                    secondaryjoin=(user_blocks.c.blocked_id == id),
-                                    lazy='dynamic')
-
-    viewed_by = db.relationship('User', secondary=user_views,
-                                primaryjoin=(user_views.c.viewed_id == id),
-                                secondaryjoin=(user_views.c.viewer_id == id),
-                                lazy='dynamic')
-
-    viewed_users = db.relationship('User', secondary=user_views,
-                                   primaryjoin=(user_views.c.viewer_id == id),
-                                   secondaryjoin=(user_views.c.viewed_id == id),
-                                   lazy='dynamic')
-
-    # Messages
-    sent_messages = db.relationship('Message', foreign_keys='Message.sender_id',
-                                   backref='sender', lazy='dynamic')
-    received_messages = db.relationship('Message', foreign_keys='Message.receiver_id',
-                                       backref='receiver', lazy='dynamic')
-
-    def set_password(self, password):
-        """Hash and set password"""
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-    def check_password(self, password):
-        """Verify password"""
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
-
-    def get_access_token(self):
-        """Generate JWT access token"""
-        return create_access_token(identity=str(self.id))
-
-    def get_refresh_token(self):
-        """Generate JWT refresh token"""
-        return create_refresh_token(identity=str(self.id))
-
-    def update_fame_rating(self):
-        """Calculate and update fame rating based on activity.
-
-        Definition used here: fame_rating = (likes * 3) + (views * 1) + (profile_completeness_bonus)
-        - Likes count more than views because they signal active interest, not passive browsing.
-        - A small flat bonus rewards having a complete profile (photos, bio, tags), since an
-          empty profile shouldn't out-rank an engaged one just from raw traffic.
-        Rounded to 2 decimals for display; consistent across the app.
+def create_user(username, email, password, first_name, last_name):
+    return execute(
         """
-        likes_count = self.liked_by.count()
-        views_count = self.viewed_by.count()
-
-        completeness_bonus = 0
-        if self.biography:
-            completeness_bonus += 2
-        if self.gender and self.sexual_preferences:
-            completeness_bonus += 2
-        if self.photos.count() > 0:
-            completeness_bonus += 3
-        if self.tags:
-            completeness_bonus += 1
-
-        rating = (likes_count * 3) + (views_count * 0.5) + completeness_bonus
-        self.fame_rating = round(rating, 2)
-        db.session.commit()
-
-    def is_profile_complete(self):
-        """True once all Web Matcha-required profile fields are filled in."""
-        return bool(
-            self.gender
-            and self.sexual_preferences
-            and self.biography
-            and self.tags
-            and self.photos.count() > 0
-            and (self.latitude is not None and self.longitude is not None or self.location_name)
-        )
-
-    def primary_photo(self):
-        return self.photos.filter_by(is_primary=True).first()
-
-    def to_dict(self, include_private=False):
-        """Convert user to dictionary"""
-        primary = self.primary_photo()
-        data = {
-            'id': self.id,
-            'username': self.username,
-            'firstName': self.first_name,
-            'lastName': self.last_name,
-            'gender': self.gender,
-            'sexualPreferences': self.sexual_preferences,
-            'biography': self.biography,
-            'profilePicture': primary.to_dict()['url'] if primary else None,
-            'photos': [p.to_dict() for p in self.photos],
-            'fameRating': self.fame_rating,
-            'tags': [tag.name for tag in self.tags],
-            'isOnline': self.is_online,
-            'lastActivity': self.last_activity.isoformat() if self.last_activity else None,
-            'location': {
-                'name': self.location_name,
-                'latitude': self.latitude,
-                'longitude': self.longitude
-            } if self.latitude and self.longitude else (
-                {'name': self.location_name, 'latitude': None, 'longitude': None}
-                if self.location_name else None
-            ),
-            'isProfileComplete': self.is_profile_complete(),
-        }
-
-        if include_private:
-            data['email'] = self.email
-            data['isVerified'] = self.is_verified
-            data['gpsConsent'] = self.gps_consent
-
-        return data
-
-    def __repr__(self):
-        return f'<User {self.username}>'
-
-
-class Tag(db.Model):
-    __tablename__ = 'tags'
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {'id': self.id, 'name': self.name}
-
-    def __repr__(self):
-        return f'<Tag {self.name}>'
-
-
-class Photo(db.Model):
-    __tablename__ = 'photos'
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    filename = db.Column(db.String(255), nullable=False)
-    is_primary = db.Column(db.Boolean, default=False, nullable=False)
-    position = db.Column(db.Integer, default=0, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            # Served by the static upload route registered in app/__init__.py
-            'url': f"/uploads/{self.filename}",
-            'isPrimary': self.is_primary,
-            'position': self.position,
-        }
-
-    def __repr__(self):
-        return f'<Photo {self.id} user={self.user_id}>'
-
-
-class Message(db.Model):
-    __tablename__ = 'messages'
-
-    id = db.Column(db.Integer, primary_key=True)
-    sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    receiver_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    is_read = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'senderId': self.sender_id,
-            'receiverId': self.receiver_id,
-            'content': self.content,
-            'isRead': self.is_read,
-            'createdAt': self.created_at.isoformat()
-        }
-
-    def __repr__(self):
-        return f'<Message {self.id}>'
-
-
-class Report(db.Model):
-    __tablename__ = 'reports'
-
-    id = db.Column(db.Integer, primary_key=True)
-    reporter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    reported_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    reason = db.Column(db.String(50), default='fake_account', nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    reporter = db.relationship('User', foreign_keys=[reporter_id])
-    reported_user = db.relationship('User', foreign_keys=[reported_user_id])
-
-    __table_args__ = (
-        db.UniqueConstraint('reporter_id', 'reported_user_id', name='uq_reporter_reported'),
+        INSERT INTO users (username, email, password_hash, first_name, last_name)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (username, email, hash_password(password), first_name, last_name),
+        returning=True,
     )
 
-    def __repr__(self):
-        return f'<Report {self.reporter_id} -> {self.reported_user_id}>'
+
+# Whitelist of columns callers may update, so a dict built from request JSON
+# can never be used to write to an arbitrary column name.
+_UPDATABLE_USER_FIELDS = {
+    'first_name', 'last_name', 'email', 'is_verified', 'gender',
+    'sexual_preferences', 'biography', 'password_hash', 'token_version',
+    'is_online', 'last_activity', 'gps_consent', 'latitude', 'longitude',
+    'location_name', 'location_updated_at', 'fame_rating',
+}
 
 
-class Notification(db.Model):
-    __tablename__ = 'notifications'
+def update_user_fields(user_id, fields: dict):
+    fields = {k: v for k, v in fields.items() if k in _UPDATABLE_USER_FIELDS}
+    if not fields:
+        return
+    set_clause = ', '.join(f"{col} = %s" for col in fields)
+    params = list(fields.values()) + [user_id]
+    execute(f"UPDATE users SET {set_clause}, updated_at = now() WHERE id = %s", params)
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    type = db.Column(db.String(50), nullable=False)  # like, view, message, match, unlike
-    from_user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    content = db.Column(db.String(255))
-    is_read = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship('User', foreign_keys=[user_id], backref='notifications')
-    from_user = db.relationship('User', foreign_keys=[from_user_id])
+# ---------------------------------------------------------------------- tags
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'type': self.type,
-            'content': self.content,
-            'isRead': self.is_read,
-            'createdAt': self.created_at.isoformat(),
-            'fromUser': self.from_user.to_dict() if self.from_user else None
-        }
+def get_all_tags():
+    return query_all("SELECT * FROM tags ORDER BY name")
 
-    def __repr__(self):
-        return f'<Notification {self.id}>'
+
+def get_tags_for_user(user_id):
+    return query_all(
+        """
+        SELECT t.* FROM tags t
+        JOIN user_tags ut ON ut.tag_id = t.id
+        WHERE ut.user_id = %s
+        ORDER BY t.name
+        """,
+        (user_id,),
+    )
+
+
+def get_or_create_tag(name):
+    tag = query_one("SELECT * FROM tags WHERE name = %s", (name,))
+    if tag:
+        return tag
+    return execute("INSERT INTO tags (name) VALUES (%s) RETURNING *", (name,), returning=True)
+
+
+def set_user_tags(user_id, tag_names):
+    execute("DELETE FROM user_tags WHERE user_id = %s", (user_id,))
+    tags = []
+    for name in tag_names:
+        tag = get_or_create_tag(name)
+        execute(
+            "INSERT INTO user_tags (user_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (user_id, tag['id']),
+        )
+        tags.append(tag)
+    return tags
+
+
+# -------------------------------------------------------------------- photos
+
+def get_photos_for_user(user_id):
+    return query_all("SELECT * FROM photos WHERE user_id = %s ORDER BY position", (user_id,))
+
+
+def count_photos(user_id):
+    row = query_one("SELECT COUNT(*) AS c FROM photos WHERE user_id = %s", (user_id,))
+    return row['c'] if row else 0
+
+
+def get_primary_photo(user_id):
+    return query_one("SELECT * FROM photos WHERE user_id = %s AND is_primary = true", (user_id,))
+
+
+def add_photo(user_id, filename):
+    current_count = count_photos(user_id)
+    return execute(
+        """
+        INSERT INTO photos (user_id, filename, is_primary, position)
+        VALUES (%s, %s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, filename, current_count == 0, current_count),
+        returning=True,
+    )
+
+
+def get_photo(photo_id, user_id):
+    return query_one("SELECT * FROM photos WHERE id = %s AND user_id = %s", (photo_id, user_id))
+
+
+def delete_photo(photo_id, user_id):
+    execute("DELETE FROM photos WHERE id = %s AND user_id = %s", (photo_id, user_id))
+
+
+def set_primary_photo(photo_id, user_id):
+    execute("UPDATE photos SET is_primary = false WHERE user_id = %s", (user_id,))
+    execute("UPDATE photos SET is_primary = true WHERE id = %s AND user_id = %s", (photo_id, user_id))
+
+
+def promote_next_photo_to_primary(user_id):
+    next_photo = query_one(
+        "SELECT * FROM photos WHERE user_id = %s ORDER BY position LIMIT 1", (user_id,)
+    )
+    if next_photo:
+        execute("UPDATE photos SET is_primary = true WHERE id = %s", (next_photo['id'],))
+
+
+# ---------------------------------------------------------- likes/views/blocks
+
+def has_liked(liker_id, liked_id):
+    return query_one(
+        "SELECT 1 FROM user_likes WHERE liker_id = %s AND liked_id = %s", (liker_id, liked_id)
+    ) is not None
+
+
+def like_user(liker_id, liked_id):
+    execute(
+        "INSERT INTO user_likes (liker_id, liked_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (liker_id, liked_id),
+    )
+
+
+def unlike_user(liker_id, liked_id):
+    execute("DELETE FROM user_likes WHERE liker_id = %s AND liked_id = %s", (liker_id, liked_id))
+
+
+def get_likers(user_id):
+    return query_all(
+        """
+        SELECT u.* FROM users u
+        JOIN user_likes ul ON ul.liker_id = u.id
+        WHERE ul.liked_id = %s
+        ORDER BY u.username
+        """,
+        (user_id,),
+    )
+
+
+def is_blocked_either_way(user_a_id, user_b_id):
+    return query_one(
+        """
+        SELECT 1 FROM user_blocks
+        WHERE (blocker_id = %s AND blocked_id = %s)
+           OR (blocker_id = %s AND blocked_id = %s)
+        """,
+        (user_a_id, user_b_id, user_b_id, user_a_id),
+    ) is not None
+
+
+def block_user(blocker_id, blocked_id):
+    execute(
+        "INSERT INTO user_blocks (blocker_id, blocked_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (blocker_id, blocked_id),
+    )
+
+
+def unblock_user(blocker_id, blocked_id):
+    execute("DELETE FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (blocker_id, blocked_id))
+
+
+VIEW_RENOTIFY_COOLDOWN = timedelta(seconds=10)  # minimum time between "view" notifications for the same viewer/viewed pair
+
+
+def record_view(viewer_id, viewed_id):
+    """
+    Insert or refresh a view timestamp.
+    Returns True if a 'view' notification should fire for this visit — i.e.
+    this is the first-ever view, or the last one was more than
+    VIEW_RENOTIFY_COOLDOWN ago. Repeated views within the cooldown (e.g. the
+    viewer refreshing the page a few times) update viewed_at but don't
+    re-trigger the notification.
+    """
+    existing = query_one(
+        "SELECT viewed_at FROM user_views WHERE viewer_id = %s AND viewed_id = %s",
+        (viewer_id, viewed_id),
+    )
+
+    if existing is None:
+        execute("INSERT INTO user_views (viewer_id, viewed_id) VALUES (%s, %s)", (viewer_id, viewed_id))
+        return True
+
+    execute(
+        "UPDATE user_views SET viewed_at = now() WHERE viewer_id = %s AND viewed_id = %s",
+        (viewer_id, viewed_id),
+    )
+    return (datetime.utcnow() - existing['viewed_at']) > VIEW_RENOTIFY_COOLDOWN
+
+
+def get_viewers(user_id):
+    return query_all(
+        """
+        SELECT u.* FROM users u
+        JOIN user_views uv ON uv.viewer_id = u.id
+        WHERE uv.viewed_id = %s
+        ORDER BY u.username
+        """,
+        (user_id,),
+    )
+
+
+# -------------------------------------------------------- fame rating / etc.
+
+def update_fame_rating(user_id):
+    likes = query_one("SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s", (user_id,))['c']
+    views = query_one("SELECT COUNT(*) AS c FROM user_views WHERE viewed_id = %s", (user_id,))['c']
+
+    user = get_user_by_id(user_id)
+    tags = get_tags_for_user(user_id)
+    photos_count = count_photos(user_id)
+
+    bonus = 0
+    if user['biography']:
+        bonus += 2
+    if user['gender'] and user['sexual_preferences']:
+        bonus += 2
+    if photos_count > 0:
+        bonus += 3
+    if tags:
+        bonus += 1
+
+    rating = round((likes * 3) + (views * 0.5) + bonus, 2)
+    execute("UPDATE users SET fame_rating = %s WHERE id = %s", (rating, user_id))
+    return rating
+
+
+def is_profile_complete(user, tags, photos_count):
+    return bool(
+        user['gender']
+        and user['sexual_preferences']
+        and user['biography']
+        and tags
+        and photos_count > 0
+        and ((user['latitude'] is not None and user['longitude'] is not None) or user['location_name'])
+    )
+
+
+# --------------------------------------------------------------- serializers
+
+def photo_to_dict(photo):
+    return {
+        'id': photo['id'],
+        'url': f"/uploads/{photo['filename']}",
+        'isPrimary': photo['is_primary'],
+        'position': photo['position'],
+    }
+
+
+def user_to_dict(user, include_private=False):
+    tags = get_tags_for_user(user['id'])
+    photos = get_photos_for_user(user['id'])
+    primary = get_primary_photo(user['id'])
+
+    data = {
+        'id': user['id'],
+        'username': user['username'],
+        'firstName': user['first_name'],
+        'lastName': user['last_name'],
+        'gender': user['gender'],
+        'sexualPreferences': user['sexual_preferences'],
+        'biography': user['biography'],
+        'profilePicture': f"/uploads/{primary['filename']}" if primary else None,
+        'photos': [photo_to_dict(p) for p in photos],
+        'fameRating': user['fame_rating'],
+        'tags': [t['name'] for t in tags],
+        'isOnline': user['is_online'],
+        'lastActivity': user['last_activity'].isoformat() if user['last_activity'] else None,
+        'location': (
+            {'name': user['location_name'], 'latitude': user['latitude'], 'longitude': user['longitude']}
+            if user['latitude'] and user['longitude']
+            else ({'name': user['location_name'], 'latitude': None, 'longitude': None}
+                  if user['location_name'] else None)
+        ),
+        'isProfileComplete': is_profile_complete(user, tags, len(photos)),
+    }
+
+    if include_private:
+        data['email'] = user['email']
+        data['isVerified'] = user['is_verified']
+        data['gpsConsent'] = user['gps_consent']
+
+    return data
+
+
+# ------------------------------------------------------------------ messages
+
+def create_message(sender_id, receiver_id, content):
+    return execute(
+        "INSERT INTO messages (sender_id, receiver_id, content) VALUES (%s, %s, %s) RETURNING *",
+        (sender_id, receiver_id, content),
+        returning=True,
+    )
+
+
+def get_conversation(user_a_id, user_b_id):
+    return query_all(
+        """
+        SELECT * FROM messages
+        WHERE (sender_id = %s AND receiver_id = %s)
+           OR (sender_id = %s AND receiver_id = %s)
+        ORDER BY created_at
+        """,
+        (user_a_id, user_b_id, user_b_id, user_a_id),
+    )
+
+
+def message_to_dict(message):
+    return {
+        'id': message['id'],
+        'senderId': message['sender_id'],
+        'receiverId': message['receiver_id'],
+        'content': message['content'],
+        'isRead': message['is_read'],
+        'createdAt': message['created_at'].isoformat(),
+    }
+
+
+# -------------------------------------------------------------------- reports
+
+def create_report(reporter_id, reported_user_id, reason='fake_account'):
+    return execute(
+        """
+        INSERT INTO reports (reporter_id, reported_user_id, reason)
+        VALUES (%s, %s, %s)
+        RETURNING *
+        """,
+        (reporter_id, reported_user_id, reason),
+        returning=True,
+    )
+
+
+def has_reported(reporter_id, reported_user_id):
+    return query_one(
+        "SELECT 1 FROM reports WHERE reporter_id = %s AND reported_user_id = %s",
+        (reporter_id, reported_user_id),
+    ) is not None
+
+
+# --------------------------------------------------------------- notifications
+
+def create_notification(user_id, type_, from_user_id=None, content=None):
+    notif = execute(
+        """
+        INSERT INTO notifications (user_id, type, from_user_id, content)
+        VALUES (%s, %s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, type_, from_user_id, content),
+        returning=True,
+    ) 
+    from app.sockets import socketio
+    socketio.emit('notification', notification_to_dict(notif), room=f'user:{user_id}')
+    return notif
+
+
+def notification_to_dict(notif):
+    from_user = get_user_by_id(notif['from_user_id']) if notif['from_user_id'] else None
+    return {
+        'id': notif['id'],
+        'type': notif['type'],
+        'content': notif['content'],
+        'isRead': notif['is_read'],
+        'createdAt': notif['created_at'].isoformat(),
+        'fromUser': user_to_dict(from_user) if from_user else None,
+    }
+
+
+def get_notifications_for_user(user_id, limit=50):
+    return query_all(
+        "SELECT * FROM notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+        (user_id, limit),
+    )
+
+
+def count_unread_notifications(user_id):
+    row = query_one(
+        "SELECT COUNT(*) AS c FROM notifications WHERE user_id = %s AND is_read = false",
+        (user_id,),
+    )
+    return row['c'] if row else 0
+
+
+def mark_notification_read(notification_id, user_id):
+    execute(
+        "UPDATE notifications SET is_read = true WHERE id = %s AND user_id = %s",
+        (notification_id, user_id),
+    )
+
+
+def mark_all_notifications_read(user_id):
+    execute(
+        "UPDATE notifications SET is_read = true WHERE user_id = %s AND is_read = false",
+        (user_id,),
+    )

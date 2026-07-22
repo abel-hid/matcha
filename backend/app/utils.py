@@ -26,12 +26,11 @@ def validate_password(password):
         return False, "Password must contain at least one number"
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         return False, "Password must contain at least one special character"
-    
-    # Check against common dictionary words
+
     common_passwords = ['password', '123456', 'qwerty', 'admin', 'letmein', 'welcome']
     if password.lower() in common_passwords:
         return False, "Password is too common"
-    
+
     return True, "Password is valid"
 
 # Email validation
@@ -89,13 +88,13 @@ def send_email(subject, recipients, html_body, text_body=None):
 
 # Send verification email
 def send_verification_email(user):
-    """Send email verification link"""
-    token = generate_verification_token(user.email)
+    """Send email verification link. `user` is a dict from app.models."""
+    token = generate_verification_token(user['email'])
     verify_url = f"{Config.FRONTEND_URL}/verify?token={token}"
-    
+
     html = f"""
     <h1>Welcome to Matcha!</h1>
-    <p>Hi {user.first_name},</p>
+    <p>Hi {user['first_name']},</p>
     <p>Please click the link below to verify your email address:</p>
     <p><a href="{verify_url}">{verify_url}</a></p>
     <p>This link will expire in 1 hour.</p>
@@ -103,22 +102,22 @@ def send_verification_email(user):
     <br>
     <p>Matcha Team</p>
     """
-    
+
     send_email(
         subject="Verify Your Email - Matcha",
-        recipients=[user.email],
+        recipients=[user['email']],
         html_body=html
     )
 
 # Send password reset email
 def send_password_reset_email(user):
-    """Send password reset link"""
-    token = generate_reset_token(user.email, user.token_version)
+    """Send password reset link. `user` is a dict from app.models."""
+    token = generate_reset_token(user['email'], user['token_version'])
     reset_url = f"{Config.FRONTEND_URL}/reset-password?token={token}"
-    
+
     html = f"""
     <h1>Reset Your Password</h1>
-    <p>Hi {user.first_name},</p>
+    <p>Hi {user['first_name']},</p>
     <p>Click the link below to reset your password:</p>
     <p><a href="{reset_url}">{reset_url}</a></p>
     <p>This link will expire in 1 hour.</p>
@@ -126,10 +125,10 @@ def send_password_reset_email(user):
     <br>
     <p>Matcha Team</p>
     """
-    
+
     send_email(
         subject="Reset Password - Matcha",
-        recipients=[user.email],
+        recipients=[user['email']],
         html_body=html
     )
 
@@ -144,28 +143,24 @@ def save_image(file):
     """Save uploaded image with validation and optimization"""
     if not allowed_file(file.filename):
         return None
-    
-    # Secure the filename
+
     filename = secure_filename(file.filename)
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     filename = f"{timestamp}_{filename}"
-    
-    # Create upload folder if not exists
+
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-    
-    # Save file
+
     filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
     file.save(filepath)
-    
-    # Optimize image
+
     try:
         img = Image.open(filepath)
         img.thumbnail((800, 800), Image.Resampling.LANCZOS)
         img.save(filepath, optimize=True, quality=85)
-    except Exception as e:
+    except Exception:
         os.remove(filepath)
         return None
-    
+
     return filepath
 
 # Calculate distance between two locations
@@ -180,35 +175,36 @@ def geocode_location(location_name):
     """Convert location name to coordinates"""
     if not location_name:
         return None, None
-    
+
     geolocator = Nominatim(user_agent="matcha-app")
     try:
         location = geolocator.geocode(location_name, timeout=10)
         if location:
             return location.latitude, location.longitude
-    except:
+    except Exception:
         pass
     return None, None
 
 # Calculate fame rating
-def calculate_fame_rating(user):
-    """Calculate fame rating based on activity"""
-    likes_count = user.liked_by.count()
-    views_count = user.viewed_by.count()
-    
-    # Weighted calculation
+def calculate_fame_rating(user_id):
+    """
+    Kept for backward compatibility with any caller that just wants a number
+    without persisting it. `app.models.update_fame_rating` is the version
+    used by the routes — it computes this same way and saves it.
+    """
+    from app.db import query_one
+    likes_count = query_one(
+        "SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s", (user_id,)
+    )['c']
+    views_count = query_one(
+        "SELECT COUNT(*) AS c FROM user_views WHERE viewed_id = %s", (user_id,)
+    )['c']
+
     rating = (likes_count * 2) + (views_count * 0.5)
     return round(rating, 2)
 
 # Check if two users are connected (mutual like)
 def are_connected(user1_id, user2_id):
     """Check if two users have mutual likes"""
-    from app.models import User
-    user1 = User.query.get(user1_id)
-    user2 = User.query.get(user2_id)
-    
-    if not user1 or not user2:
-        return False
-    
-    return user1.liked_users.filter(User.id == user2_id).count() > 0 and \
-           user2.liked_users.filter(User.id == user1_id).count() > 0
+    from app.models import has_liked
+    return has_liked(user1_id, user2_id) and has_liked(user2_id, user1_id)

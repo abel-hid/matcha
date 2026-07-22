@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/app/context/AuthContext';
+import { NotificationBell } from '@/app/components/NotificationBell';
 
 const NAV_LINKS = [
   { href: '/', label: 'Discover' },
@@ -72,6 +73,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
+            <NotificationBell />
             <Link
               href="/profile"
               className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[#332844] text-sm font-medium text-[#F5EFE9]"
@@ -87,21 +89,24 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </button>
           </div>
 
-          {/* Mobile menu button */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen((v) => !v)}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-[#F5EFE9] md:hidden"
-            aria-label="Toggle menu"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              {mobileOpen ? (
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              ) : (
-                <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              )}
-            </svg>
-          </button>
+          {/* Mobile controls: bell always visible, menu toggle next to it */}
+          <div className="flex items-center gap-1 md:hidden">
+            <NotificationBell />
+            <button
+              type="button"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-[#F5EFE9]"
+              aria-label="Toggle menu"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                {mobileOpen ? (
+                  <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                ) : (
+                  <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Mobile nav */}

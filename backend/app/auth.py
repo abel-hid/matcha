@@ -4,9 +4,9 @@ from flask_jwt_extended import (
     jwt_required, get_jwt_identity
 )
 from datetime import datetime
+import psycopg2
 
-from app.models import User
-from app.extensions import db
+from app import models
 from app.utils import (
     validate_password, validate_email, send_verification_email,
     verify_verification_token, send_password_reset_email, verify_reset_token
@@ -16,11 +16,11 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
 def get_current_user_or_404():
-    """Helper: resolve the JWT identity (always a string) back to a User row."""
+    """Helper: resolve the JWT identity (always a string) back to a user row."""
     user_id = get_jwt_identity()
     if user_id is None:
         return None
-    return User.query.get(int(user_id))
+    return models.get_user_by_id(int(user_id))
 
 
 @auth_bp.route('/me', methods=['GET'])
@@ -29,14 +29,12 @@ def get_current_user():
     user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    return jsonify({
-        'user': user.to_dict(include_private=True)
-    }), 200
+    return jsonify({'user': models.user_to_dict(user, include_private=True)}), 200
 
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    data = request.get_json() or {}
 
     required_fields = ['username', 'email', 'firstName', 'lastName', 'password']
     for field in required_fields:
@@ -50,33 +48,42 @@ def register():
     if not is_valid:
         return jsonify({'message': msg}), 400
 
-    if User.query.filter_by(username=data['username']).first():
+    if models.get_user_by_username(data['username']):
         return jsonify({'message': 'Username already exists'}), 400
 
-    if User.query.filter_by(email=data['email']).first():
+    if models.get_user_by_email(data['email']):
         return jsonify({'message': 'Email already registered'}), 400
 
-    user = User(
-        username=data['username'],
-        email=data['email'],
-        first_name=data['firstName'],
-        last_name=data['lastName']
-    )
-    user.set_password(data['password'])
-    user.sexual_preferences = data.get('sexualPreferences', 'bisexual')
-    user.gender = data.get('gender', '')
+    try:
+        user = models.create_user(
+            username=data['username'],
+            email=data['email'],
+            password=data['password'],
+            first_name=data['firstName'],
+            last_name=data['lastName'],
+        )
+    except psycopg2.errors.UniqueViolation:
+        # Race condition: someone registered the same username/email between
+        # our check above and the INSERT. Return a clean 400, not a 500.
+        return jsonify({'message': 'Username or email already exists'}), 400
 
-    db.session.add(user)
-    db.session.commit()
+    optional_updates = {}
+    if data.get('sexualPreferences'):
+        optional_updates['sexual_preferences'] = data['sexualPreferences']
+    else:
+        optional_updates['sexual_preferences'] = 'bisexual'
+    optional_updates['gender'] = data.get('gender', '')
+    models.update_user_fields(user['id'], optional_updates)
+    user = models.get_user_by_id(user['id'])
 
     try:
-        send_verification_email(user) 
+        send_verification_email(user)
     except Exception as e:
         print(f"Email error: {e}")
 
     return jsonify({
         'message': 'User registered successfully. Please verify your email.',
-        'user': user.to_dict()
+        'user': models.user_to_dict(user),
     }), 201
 
 
@@ -86,32 +93,31 @@ def verify_email(token):
     if not email:
         return jsonify({'message': 'Invalid or expired verification token'}), 400
 
-    user = User.query.filter_by(email=email).first()
+    user = models.get_user_by_email(email)
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    if user.is_verified:
+    if user['is_verified']:
         return jsonify({'message': 'Email already verified'}), 400
 
-    user.is_verified = True
-    db.session.commit()
+    models.update_user_fields(user['id'], {'is_verified': True})
 
     return jsonify({'message': 'Email verified successfully'}), 200
 
 
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
 
     if not email:
         return jsonify({'message': 'Email is required'}), 400
 
-    user = User.query.filter_by(email=email).first()
+    user = models.get_user_by_email(email)
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    if user.is_verified:
+    if user['is_verified']:
         return jsonify({'message': 'Email already verified'}), 400
 
     try:
@@ -124,29 +130,31 @@ def resend_verification():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
+    data = request.get_json() or {}
 
     if not data.get('username') or not data.get('password'):
         return jsonify({'message': 'Username and password required'}), 400
 
-    user = User.query.filter_by(username=data['username']).first()
+    user = models.get_user_by_username(data['username'])
 
-    if not user or not user.check_password(data['password']):
+    if not user or not models.check_password(data['password'], user['password_hash']):
         return jsonify({'message': 'Invalid credentials'}), 401
 
-    # Uncomment when email verification is fully set up
-    if not user.is_verified:
+    if not user['is_verified']:
         return jsonify({'message': 'Please verify your email first'}), 401
 
-    # Update online status
-    user.is_online = True
-    user.last_activity = datetime.utcnow()
-    db.session.commit()
+    models.update_user_fields(user['id'], {
+        'is_online': True,
+        'last_activity': datetime.utcnow(),
+    })
+    user = models.get_user_by_id(user['id'])
+
+    access_token, refresh_token = models.get_tokens_for_user(user['id'])
 
     return jsonify({
-        'token': create_access_token(identity=str(user.id)),
-        'refreshToken': create_refresh_token(identity=str(user.id)),
-        'user': user.to_dict(include_private=True)
+        'token': access_token,
+        'refreshToken': refresh_token,
+        'user': models.user_to_dict(user, include_private=True),
     }), 200
 
 
@@ -158,7 +166,7 @@ def refresh():
         return jsonify({'message': 'User not found'}), 404
 
     return jsonify({
-        'token': create_access_token(identity=str(user.id))
+        'token': create_access_token(identity=str(user['id']))
     }), 200
 
 
@@ -168,29 +176,32 @@ def logout():
     user = get_current_user_or_404()
 
     if user:
-        user.is_online = False
-        user.last_activity = datetime.utcnow()
-        db.session.commit()
+        models.update_user_fields(user['id'], {
+            'is_online': False,
+            'last_activity': datetime.utcnow(),
+        })
 
     return jsonify({'message': 'Logged out successfully'}), 200
 
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
 
     if not email:
         return jsonify({'message': 'Email is required'}), 400
 
-    user = User.query.filter_by(email=email).first()
+    user = models.get_user_by_email(email)
     if not user:
+        # Same response whether or not the account exists, so this endpoint
+        # can't be used to enumerate registered emails.
         return jsonify({'message': 'Password reset email sent if account exists'}), 200
 
     try:
         send_password_reset_email(user)
     except Exception as e:
-        print(f"[forgot-password] failed to send email to {user.email}: {e}")
+        print(f"[forgot-password] failed to send email to {user['email']}: {e}")
         return jsonify({'message': 'Failed to send email'}), 500
 
     return jsonify({'message': 'Password reset email sent'}), 200
@@ -198,7 +209,7 @@ def forgot_password():
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
-    data = request.get_json()
+    data = request.get_json() or {}
     token = data.get('token')
     new_password = data.get('password')
 
@@ -214,22 +225,22 @@ def reset_password():
         message = 'This reset link has expired' if reason == 'expired' else 'This reset link is invalid'
         return jsonify({'message': message, 'reason': reason}), 400
 
-    user = User.query.filter_by(email=payload['email']).first()
+    user = models.get_user_by_email(payload['email'])
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    if payload.get('v') != user.token_version:
+    if payload.get('v') != user['token_version']:
         return jsonify({
             'message': 'This reset link has already been used',
-            'reason': 'used'
+            'reason': 'used',
         }), 400
 
-    user.set_password(new_password)
-    user.token_version += 1
-    db.session.commit()
+    models.update_user_fields(user['id'], {
+        'password_hash': models.hash_password(new_password),
+        'token_version': user['token_version'] + 1,
+    })
 
     return jsonify({'message': 'Password reset successfully'}), 200
-
 
 
 @auth_bp.route('/verify-reset-token/<token>', methods=['GET'])
@@ -238,11 +249,11 @@ def verify_reset_token_route(token):
     if not payload:
         return jsonify({'valid': False, 'reason': reason}), 400
 
-    user = User.query.filter_by(email=payload['email']).first()
+    user = models.get_user_by_email(payload['email'])
     if not user:
         return jsonify({'valid': False, 'reason': 'invalid'}), 400
 
-    if payload.get('v') != user.token_version:
+    if payload.get('v') != user['token_version']:
         return jsonify({'valid': False, 'reason': 'used'}), 400
 
     return jsonify({'valid': True}), 200

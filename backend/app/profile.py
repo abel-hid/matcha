@@ -2,20 +2,17 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 
-from app.models import User, Tag, Photo, MAX_PHOTOS_PER_USER
-from app.extensions import db
+from app import models
 from app.utils import validate_email, save_image, geocode_location
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
 
 
 def get_current_user_or_404():
-    """Helper: resolve the JWT identity (always a string) back to a User row."""
     user_id = get_jwt_identity()
     if user_id is None:
         return None
-    return User.query.get(int(user_id))
-
+    return models.get_user_by_id(int(user_id))
 
 
 @profile_bp.route('', methods=['GET'])
@@ -24,75 +21,69 @@ def get_profile():
     user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    return jsonify({'user': user.to_dict(include_private=True)}), 200
+    return jsonify({'user': models.user_to_dict(user, include_private=True)}), 200
 
 
 @profile_bp.route('', methods=['PUT'])
 @jwt_required()
 def update_profile():
-    """
-    Update gender, sexual preferences, biography, first/last name, and email.
-    Tags, photos, and location each have their own dedicated endpoints below —
-    they involve different validation (uniqueness, file handling, geocoding)
-    and keeping them separate avoids one giant do-everything route.
-    """
     user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
     data = request.get_json() or {}
+    updates = {}
 
     if 'firstName' in data:
         if not data['firstName']:
             return jsonify({'message': 'First name cannot be empty'}), 400
-        user.first_name = data['firstName']
+        updates['first_name'] = data['firstName']
 
     if 'lastName' in data:
         if not data['lastName']:
             return jsonify({'message': 'Last name cannot be empty'}), 400
-        user.last_name = data['lastName']
+        updates['last_name'] = data['lastName']
 
     if 'email' in data:
         new_email = data['email']
         if not validate_email(new_email):
             return jsonify({'message': 'Invalid email address'}), 400
-        existing = User.query.filter_by(email=new_email).first()
-        if existing and existing.id != user.id:
+        existing = models.get_user_by_email(new_email)
+        if existing and existing['id'] != user['id']:
             return jsonify({'message': 'Email already in use'}), 400
-        if new_email != user.email:
-            user.email = new_email
-            user.is_verified = False
+        if new_email != user['email']:
+            updates['email'] = new_email
+            updates['is_verified'] = False
+
     if 'gender' in data:
-        user.gender = data['gender']
+        updates['gender'] = data['gender']
 
     if 'sexualPreferences' in data:
-        user.sexual_preferences = data['sexualPreferences']
+        updates['sexual_preferences'] = data['sexualPreferences']
 
     if 'biography' in data:
-        user.biography = data['biography']
+        updates['biography'] = data['biography']
 
-    db.session.commit()
+    if updates:
+        models.update_user_fields(user['id'], updates)
 
-    return jsonify({'message': 'Profile updated', 'user': user.to_dict(include_private=True)}), 200
+    updated_user = models.get_user_by_id(user['id'])
+    return jsonify({
+        'message': 'Profile updated',
+        'user': models.user_to_dict(updated_user, include_private=True),
+    }), 200
 
 
 @profile_bp.route('/tags', methods=['GET'])
 @jwt_required()
 def list_tags():
-    """All tags in the system, for autocomplete when a user is adding interests."""
-    tags = Tag.query.order_by(Tag.name).all()
-    return jsonify({'tags': [t.to_dict() for t in tags]}), 200
+    tags = models.get_all_tags()
+    return jsonify({'tags': [{'id': t['id'], 'name': t['name']} for t in tags]}), 200
 
 
 @profile_bp.route('/tags', methods=['PUT'])
 @jwt_required()
 def set_my_tags():
-    """
-    Replace the current user's tag list. Accepts {"tags": ["vegan", "geek", ...]}.
-    Tag names are normalized (lowercased, trimmed, leading '#' stripped) so
-    "#Vegan" and "vegan" resolve to the same reusable Tag row instead of
-    silently creating duplicates.
-    """
     user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -113,20 +104,8 @@ def set_my_tags():
     if len(normalized) > 20:
         return jsonify({'message': 'A maximum of 20 tags is allowed'}), 400
 
-    tag_objects = []
-    for name in normalized:
-        tag = Tag.query.filter_by(name=name).first()
-        if not tag:
-            tag = Tag(name=name)
-            db.session.add(tag)
-            db.session.flush()  # get an id without a full commit yet
-        tag_objects.append(tag)
-
-    user.tags = tag_objects
-    db.session.commit()
-
-    return jsonify({'tags': [t.name for t in user.tags]}), 200
-
+    tags = models.set_user_tags(user['id'], normalized)
+    return jsonify({'tags': [t['name'] for t in tags]}), 200
 
 
 @profile_bp.route('/photos', methods=['POST'])
@@ -136,8 +115,8 @@ def upload_photo():
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    if user.photos.count() >= MAX_PHOTOS_PER_USER:
-        return jsonify({'message': f'You can have at most {MAX_PHOTOS_PER_USER} photos'}), 400
+    if models.count_photos(user['id']) >= models.MAX_PHOTOS_PER_USER:
+        return jsonify({'message': f'You can have at most {models.MAX_PHOTOS_PER_USER} photos'}), 400
 
     if 'photo' not in request.files:
         return jsonify({'message': 'No photo file provided'}), 400
@@ -150,19 +129,14 @@ def upload_photo():
     if not filepath:
         return jsonify({'message': 'Invalid or unsupported image file'}), 400
 
-    filename = filepath.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]  # basename, OS-agnostic
-    is_first_photo = user.photos.count() == 0
+    filename = filepath.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]  # handle both Unix and Windows paths
+    photo = models.add_photo(user['id'], filename)
+    photos = models.get_photos_for_user(user['id'])
 
-    photo = Photo(
-        user_id=user.id,
-        filename=filename,
-        is_primary=is_first_photo,  # first photo you ever upload becomes primary automatically
-        position=user.photos.count()
-    )
-    db.session.add(photo)
-    db.session.commit()
-
-    return jsonify({'photo': photo.to_dict(), 'photos': [p.to_dict() for p in user.photos]}), 201
+    return jsonify({
+        'photo': models.photo_to_dict(photo),
+        'photos': [models.photo_to_dict(p) for p in photos],
+    }), 201
 
 
 @profile_bp.route('/photos/<int:photo_id>', methods=['DELETE'])
@@ -172,21 +146,17 @@ def delete_photo(photo_id):
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    photo = Photo.query.filter_by(id=photo_id, user_id=user.id).first()
+    photo = models.get_photo(photo_id, user['id'])
     if not photo:
         return jsonify({'message': 'Photo not found'}), 404
 
-    was_primary = photo.is_primary
-    db.session.delete(photo)
-    db.session.flush()
+    was_primary = photo['is_primary']
+    models.delete_photo(photo_id, user['id'])
     if was_primary:
-        next_photo = user.photos.order_by(Photo.position).first()
-        if next_photo:
-            next_photo.is_primary = True
+        models.promote_next_photo_to_primary(user['id'])
 
-    db.session.commit()
-
-    return jsonify({'photos': [p.to_dict() for p in user.photos]}), 200
+    photos = models.get_photos_for_user(user['id'])
+    return jsonify({'photos': [models.photo_to_dict(p) for p in photos]}), 200
 
 
 @profile_bp.route('/photos/<int:photo_id>/primary', methods=['PUT'])
@@ -196,29 +166,18 @@ def set_primary_photo(photo_id):
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    photo = Photo.query.filter_by(id=photo_id, user_id=user.id).first()
+    photo = models.get_photo(photo_id, user['id'])
     if not photo:
         return jsonify({'message': 'Photo not found'}), 404
 
-    for p in user.photos:
-        p.is_primary = (p.id == photo.id)
-
-    db.session.commit()
-
-    return jsonify({'photos': [p.to_dict() for p in user.photos]}), 200
-
+    models.set_primary_photo(photo_id, user['id'])
+    photos = models.get_photos_for_user(user['id'])
+    return jsonify({'photos': [models.photo_to_dict(p) for p in photos]}), 200
 
 
 @profile_bp.route('/location', methods=['PUT'])
 @jwt_required()
 def update_location():
-    """
-    Two modes, both requiring an explicit choice from the client:
-      - GPS:    {"gpsConsent": true, "latitude": ..., "longitude": ...}
-      - Manual: {"gpsConsent": false, "locationName": "Casablanca, Morocco"}
-    gpsConsent is stored so the app can honor "opted out" on future visits
-    instead of re-prompting or silently falling back.
-    """
     user = get_current_user_or_404()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -229,35 +188,41 @@ def update_location():
     if gps_consent is None:
         return jsonify({'message': 'gpsConsent is required (true or false)'}), 400
 
-    user.gps_consent = bool(gps_consent)
+    updates = {
+        'gps_consent': bool(gps_consent),
+        'location_updated_at': datetime.utcnow(),
+    }
 
-    if user.gps_consent:
+    if updates['gps_consent']:
         lat, lon = data.get('latitude'), data.get('longitude')
         if lat is None or lon is None:
             return jsonify({'message': 'latitude and longitude are required when gpsConsent is true'}), 400
-        user.latitude = float(lat)
-        user.longitude = float(lon)
+        try:
+            updates['latitude'] = float(lat)
+            updates['longitude'] = float(lon)
+        except (TypeError, ValueError):
+            return jsonify({'message': 'latitude and longitude must be numbers'}), 400
         if data.get('locationName'):
-            user.location_name = data['locationName']
+            updates['location_name'] = data['locationName']
     else:
         location_name = data.get('locationName')
         if not location_name:
             return jsonify({'message': 'locationName is required when gpsConsent is false'}), 400
         lat, lon = geocode_location(location_name)
-        user.location_name = location_name
-        user.latitude = lat
-        user.longitude = lon
+        updates['location_name'] = location_name
+        updates['latitude'] = lat
+        updates['longitude'] = lon
 
-    user.location_updated_at = datetime.utcnow()
-    db.session.commit()
+    models.update_user_fields(user['id'], updates)
+    updated = models.get_user_by_id(user['id'])
 
     return jsonify({
         'location': {
-            'name': user.location_name,
-            'latitude': user.latitude,
-            'longitude': user.longitude,
+            'name': updated['location_name'],
+            'latitude': updated['latitude'],
+            'longitude': updated['longitude'],
         },
-        'gpsConsent': user.gps_consent,
+        'gpsConsent': updated['gps_consent'],
     }), 200
 
 
@@ -268,8 +233,8 @@ def get_viewers():
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    viewers = user.viewed_by.order_by(User.username).all()
-    return jsonify({'viewers': [v.to_dict() for v in viewers]}), 200
+    viewers = models.get_viewers(user['id'])
+    return jsonify({'viewers': [models.user_to_dict(v) for v in viewers]}), 200
 
 
 @profile_bp.route('/likes', methods=['GET'])
@@ -279,5 +244,5 @@ def get_likes():
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    likers = user.liked_by.order_by(User.username).all()
-    return jsonify({'likes': [l.to_dict() for l in likers]}), 200
+    likers = models.get_likers(user['id'])
+    return jsonify({'likes': [models.user_to_dict(l) for l in likers]}), 200
