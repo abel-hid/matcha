@@ -31,9 +31,7 @@ def create_app(config_class=Config):
     app.register_blueprint(users_bp)
     app.register_blueprint(notifications_bp)
 
-    # Imported for its side effect: registers the @socketio.on('connect'/
-    # 'disconnect') handlers. Must happen after socketio.init_app(app) above.
-    from app import sockets  # noqa: F401
+    from app import sockets 
 
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
