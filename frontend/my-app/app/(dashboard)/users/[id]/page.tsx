@@ -35,16 +35,20 @@ interface ViewedUser {
   isConnected: boolean;
 }
 
+function pluralize(value: number, unit: string) {
+  return `${value} ${unit}${value === 1 ? '' : 's'} ago`;
+}
+
 function formatLastSeen(iso: string | null) {
   if (!iso) return 'a while ago';
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} minutes ago`;
+  if (mins < 60) return pluralize(mins, 'minute');
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hours ago`;
+  if (hours < 24) return pluralize(hours, 'hour');
   const days = Math.floor(hours / 24);
-  return `${days} days ago`;
+  return pluralize(days, 'day');
 }
 
 export default function UserProfileView() {

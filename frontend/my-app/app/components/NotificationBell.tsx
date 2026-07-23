@@ -93,6 +93,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const socket = io(SOCKET_URL, {
       auth: { token },
       transports: ['websocket'],
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+
     });
     socketRef.current = socket;
 

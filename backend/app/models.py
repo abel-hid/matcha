@@ -1,8 +1,5 @@
-"""
-Data access layer — no ORM. Each function runs a parameterized SQL query
-and returns plain dicts (or lists of dicts) instead of model instances.
-"""
-from datetime import datetime, timedelta
+
+from datetime import datetime, timedelta, timezone
 import bcrypt
 from flask_jwt_extended import create_access_token, create_refresh_token
 
@@ -24,6 +21,20 @@ def check_password(password, password_hash):
 def get_tokens_for_user(user_id):
     identity = str(user_id)
     return create_access_token(identity=identity), create_refresh_token(identity=identity)
+
+
+def to_iso_utc(dt):
+    """
+    Postgres TIMESTAMP columns are naive -- dt.isoformat() alone produces
+    something like '2026-07-23T14:00:00' with no timezone marker. JS's
+    `new Date(...)` then parses that as *local* time, not UTC, silently
+    shifting every timestamp by the browser's UTC offset (e.g. exactly 1h
+    off for a GMT+1 user). Stamping it explicitly as UTC here fixes that at
+    the source instead of needing every frontend consumer to know to adjust.
+    """
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 # --------------------------------------------------------------------- users
@@ -52,8 +63,6 @@ def create_user(username, email, password, first_name, last_name):
     )
 
 
-# Whitelist of columns callers may update, so a dict built from request JSON
-# can never be used to write to an arbitrary column name.
 _UPDATABLE_USER_FIELDS = {
     'first_name', 'last_name', 'email', 'is_verified', 'gender',
     'sexual_preferences', 'biography', 'password_hash', 'token_version',
@@ -189,6 +198,21 @@ def get_likers(user_id):
     )
 
 
+def set_user_online(user_id, is_online):
+    """
+    Called from app.sockets on the true first-connect / last-disconnect for
+    a user (not per-tab). Going offline also stamps last_activity so the
+    "last seen" timestamp is accurate.
+    """
+    if is_online:
+        execute("UPDATE users SET is_online = true WHERE id = %s", (user_id,))
+    else:
+        execute(
+            "UPDATE users SET is_online = false, last_activity = now() WHERE id = %s",
+            (user_id,),
+        )
+
+
 def is_blocked_either_way(user_a_id, user_b_id):
     return query_one(
         """
@@ -211,7 +235,7 @@ def unblock_user(blocker_id, blocked_id):
     execute("DELETE FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (blocker_id, blocked_id))
 
 
-VIEW_RENOTIFY_COOLDOWN = timedelta(seconds=10)  # minimum time between "view" notifications for the same viewer/viewed pair
+VIEW_RENOTIFY_COOLDOWN = timedelta(seconds=10)  #set to 10 seconds for testing
 
 
 def record_view(viewer_id, viewed_id):
@@ -316,7 +340,7 @@ def user_to_dict(user, include_private=False):
         'fameRating': user['fame_rating'],
         'tags': [t['name'] for t in tags],
         'isOnline': user['is_online'],
-        'lastActivity': user['last_activity'].isoformat() if user['last_activity'] else None,
+        'lastActivity': to_iso_utc(user['last_activity']),
         'location': (
             {'name': user['location_name'], 'latitude': user['latitude'], 'longitude': user['longitude']}
             if user['latitude'] and user['longitude']
@@ -363,7 +387,7 @@ def message_to_dict(message):
         'receiverId': message['receiver_id'],
         'content': message['content'],
         'isRead': message['is_read'],
-        'createdAt': message['created_at'].isoformat(),
+        'createdAt': to_iso_utc(message['created_at']),
     }
 
 
@@ -399,7 +423,7 @@ def create_notification(user_id, type_, from_user_id=None, content=None):
         """,
         (user_id, type_, from_user_id, content),
         returning=True,
-    ) 
+    )
     from app.sockets import socketio
     socketio.emit('notification', notification_to_dict(notif), room=f'user:{user_id}')
     return notif
@@ -412,7 +436,7 @@ def notification_to_dict(notif):
         'type': notif['type'],
         'content': notif['content'],
         'isRead': notif['is_read'],
-        'createdAt': notif['created_at'].isoformat(),
+        'createdAt': to_iso_utc(notif['created_at']),
         'fromUser': user_to_dict(from_user) if from_user else None,
     }
 
