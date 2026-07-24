@@ -50,6 +50,7 @@ export default function ProfileForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [emailChangeNotice, setEmailChangeNotice] = useState(false);
 
   useEffect(() => {
     profileService
@@ -64,28 +65,33 @@ export default function ProfileForm() {
     setSaved(false);
   };
 
-  const handleSaveBasics = async () => {
-    if (!profile) return;
-    setSaving(true);
-    setError('');
-    setSaved(false);
-    try {
-      const data = await profileService.updateProfile({
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        email: profile.email,
-        gender: profile.gender,
-        sexualPreferences: profile.sexualPreferences,
-        biography: profile.biography,
-      });
-      setProfile(data.user);
-      setSaved(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save your profile.');
-    } finally {
-      setSaving(false);
+
+const handleSaveBasics = async () => {
+  if (!profile) return;
+  setSaving(true);
+  setError('');
+  setSaved(false);
+  setEmailChangeNotice(false);
+  try {
+    const data = await profileService.updateProfile({
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      email: profile.email,
+      gender: profile.gender,
+      sexualPreferences: profile.sexualPreferences,
+      biography: profile.biography,
+    });
+    setProfile(data.user);
+    setSaved(true);
+    if (data.emailChanged) {
+      setEmailChangeNotice(true);
     }
-  };
+  } catch (err: any) {
+    setError(err.response?.data?.message || 'Failed to save your profile.');
+  } finally {
+    setSaving(false);
+  }
+};
 
   const handleTagsChange = async (tags: string[]) => {
     updateField('tags', tags);
@@ -242,7 +248,7 @@ export default function ProfileForm() {
             </div>
           )}
 
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleSaveBasics}
@@ -251,8 +257,15 @@ export default function ProfileForm() {
             >
               {saving ? 'Saving…' : 'Save changes'}
             </button>
-            {saved && <span className="text-sm text-[#F2C879]">Saved.</span>}
+            {saved && !emailChangeNotice && <span className="text-sm text-[#F2C879]">Saved.</span>}
           </div>
+
+          {emailChangeNotice && (
+            <div className="rounded-lg border border-[#F2C879]/30 bg-[#F2C879]/10 px-4 py-3 text-sm text-[#F2C879]">
+              Your email was updated. Please check your inbox at <strong>{profile.email}</strong> and
+              verify your new address — you won&apos;t be able to log in until you do.
+            </div>
+          )}
         </div>
       </div>
     </div>

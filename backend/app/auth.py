@@ -63,8 +63,6 @@ def register():
             last_name=data['lastName'],
         )
     except psycopg2.errors.UniqueViolation:
-        # Race condition: someone registered the same username/email between
-        # our check above and the INSERT. Return a clean 400, not a 500.
         return jsonify({'message': 'Username or email already exists'}), 400
 
     optional_updates = {}
@@ -194,8 +192,6 @@ def forgot_password():
 
     user = models.get_user_by_email(email)
     if not user:
-        # Same response whether or not the account exists, so this endpoint
-        # can't be used to enumerate registered emails.
         return jsonify({'message': 'Password reset email sent if account exists'}), 200
 
     try:

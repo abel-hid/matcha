@@ -15,25 +15,18 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    init_pool()  # raw psycopg2 connection pool, replaces db.init_app
+    init_pool()
 
     jwt.init_app(app)
     mail.init_app(app)
     cors.init_app(app, origins=app.config['CORS_ORIGINS'])
 
-    # async_mode='eventlet' needs `pip install eventlet` and to be run via
-    # socketio.run(app) (see run.py) rather than app.run() / a plain WSGI
-    # server, so the websocket transport actually works.
     socketio.init_app(app, cors_allowed_origins=app.config['CORS_ORIGINS'], async_mode='eventlet')
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(notifications_bp)
-
-    # Imported for its side effect: registers the @socketio.on('connect'/
-    # 'disconnect') handlers. Must happen after socketio.init_app(app) above.
-    from app import sockets  # noqa: F401
 
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
@@ -45,11 +38,6 @@ def create_app(config_class=Config):
 
 
 def register_error_handlers(app):
-    """
-    Ensures every error — expected or not — returns JSON with an appropriate
-    status code instead of an HTML stack trace page or a bare 500.
-    """
-
     @app.errorhandler(400)
     def bad_request(e):
         return jsonify({'message': 'Bad request'}), 400

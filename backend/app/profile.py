@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 
 from app import models
-from app.utils import validate_email, save_image, geocode_location
+from app.utils import validate_email, save_image, geocode_location, send_verification_email
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
 
@@ -33,6 +33,7 @@ def update_profile():
 
     data = request.get_json() or {}
     updates = {}
+    email_changed = False
 
     if 'firstName' in data:
         if not data['firstName']:
@@ -54,6 +55,7 @@ def update_profile():
         if new_email != user['email']:
             updates['email'] = new_email
             updates['is_verified'] = False
+            email_changed = True
 
     if 'gender' in data:
         updates['gender'] = data['gender']
@@ -68,11 +70,18 @@ def update_profile():
         models.update_user_fields(user['id'], updates)
 
     updated_user = models.get_user_by_id(user['id'])
+
+    if email_changed:
+        try:
+            send_verification_email(updated_user)
+        except Exception as e:
+            print(f"[update_profile] failed to send verification email: {e}")
+
     return jsonify({
         'message': 'Profile updated',
         'user': models.user_to_dict(updated_user, include_private=True),
+        'emailChanged': email_changed,
     }), 200
-
 
 @profile_bp.route('/tags', methods=['GET'])
 @jwt_required()

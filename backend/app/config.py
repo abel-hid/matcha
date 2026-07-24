@@ -3,13 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))              # /backend/
+UPLOAD_FOLDER = os.path.join(os.path.dirname(BASE_DIR), 'uploads') # /backend/uploads
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY')
-
-    # Raw psycopg2 DSN, e.g.:
-    # "dbname=matcha user=matcha password=... host=localhost port=5432"
-    # or a URI: "postgresql://matcha:pass@localhost:5432/matcha"
     DATABASE_URL = os.environ.get('DATABASE_URL')
 
     # JWT
@@ -29,7 +27,7 @@ class Config:
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
     # Upload
-    UPLOAD_FOLDER = 'uploads'
+    UPLOAD_FOLDER = UPLOAD_FOLDER
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5MB
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
