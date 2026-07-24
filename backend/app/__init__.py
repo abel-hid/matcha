@@ -28,11 +28,6 @@ def create_app(config_class=Config):
     app.register_blueprint(users_bp)
     app.register_blueprint(notifications_bp)
 
-<<<<<<< HEAD
-=======
-    from app import sockets 
-
->>>>>>> 7b3f048cdf319f4b54f8a28546f6557e89dc3ec8
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
