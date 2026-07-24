@@ -151,7 +151,7 @@ def save_image(file):
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
     filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
-    file.save(filepath)
+    file.save(filepath) 
 
     try:
         img = Image.open(filepath)

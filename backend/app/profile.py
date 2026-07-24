@@ -83,6 +83,7 @@ def update_profile():
         'emailChanged': email_changed,
     }), 200
 
+
 @profile_bp.route('/tags', methods=['GET'])
 @jwt_required()
 def list_tags():
@@ -138,7 +139,7 @@ def upload_photo():
     if not filepath:
         return jsonify({'message': 'Invalid or unsupported image file'}), 400
 
-    filename = filepath.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]  # handle both Unix and Windows paths
+    filename = filepath.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
     photo = models.add_photo(user['id'], filename)
     photos = models.get_photos_for_user(user['id'])
 
