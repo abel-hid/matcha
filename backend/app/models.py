@@ -187,15 +187,17 @@ def unlike_user(liker_id, liked_id):
 
 
 def get_likers(user_id):
-    return query_all(
-        """
+    return query_all("""
         SELECT u.* FROM users u
-        JOIN user_likes ul ON ul.liker_id = u.id
-        WHERE ul.liked_id = %s
-        ORDER BY u.username
-        """,
-        (user_id,),
-    )
+        JOIN user_likes l ON l.liker_id = u.id
+        WHERE l.liked_id = %s
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
+                 OR (b.blocker_id = u.id AND b.blocked_id = %s)
+          )
+        ORDER BY l.created_at DESC
+    """, (user_id, user_id, user_id))
 
 
 def set_user_online(user_id, is_online):
@@ -264,16 +266,17 @@ def record_view(viewer_id, viewed_id):
 
 
 def get_viewers(user_id):
-    return query_all(
-        """
+    return query_all("""
         SELECT u.* FROM users u
-        JOIN user_views uv ON uv.viewer_id = u.id
-        WHERE uv.viewed_id = %s
-        ORDER BY u.username
-        """,
-        (user_id,),
-    )
-
+        JOIN user_views v ON v.viewer_id = u.id
+        WHERE v.viewed_id = %s
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
+                 OR (b.blocker_id = u.id AND b.blocked_id = %s)
+          )
+        ORDER BY v.viewed_at DESC
+    """, (user_id, user_id, user_id))
 
 # -------------------------------------------------------- fame rating / etc.
 
