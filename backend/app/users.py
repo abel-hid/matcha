@@ -32,8 +32,7 @@ def get_user_profile(user_id):
         if is_new_view:
             models.create_notification(target['id'], 'view', from_user_id=current_user['id'])
         models.update_fame_rating(target['id'])
-        target = models.get_user_by_id(user_id)  # refresh fame_rating after update
-
+        target = models.get_user_by_id(user_id)
     data = models.user_to_dict(target, include_private=False)
     data['hasLikedThem'] = models.has_liked(current_user['id'], target['id'])
     data['theyLikedMe'] = models.has_liked(target['id'], current_user['id'])
@@ -90,10 +89,14 @@ def unlike_user(user_id):
     if not target:
         return jsonify({'message': 'User not found'}), 404
 
-    had_liked = models.has_liked(current_user['id'], target['id'])
+    was_connected = (
+        models.has_liked(current_user['id'], target['id'])
+        and models.has_liked(target['id'], current_user['id'])
+    )
 
     models.unlike_user(current_user['id'], target['id'])
-    if had_liked:
+
+    if was_connected:
         models.create_notification(target['id'], 'unlike', from_user_id=current_user['id'])
 
     models.update_fame_rating(target['id'])
