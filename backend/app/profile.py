@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 
 from app import models
-from app.utils import validate_email, save_image, geocode_location, send_verification_email
+from app.utils import validate_email, save_image, geocode_location, reverse_geocode_location, send_verification_email
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
 
@@ -212,8 +212,11 @@ def update_location():
             updates['longitude'] = float(lon)
         except (TypeError, ValueError):
             return jsonify({'message': 'latitude and longitude must be numbers'}), 400
+
         if data.get('locationName'):
             updates['location_name'] = data['locationName']
+        else:
+            updates['location_name'] = reverse_geocode_location(updates['latitude'], updates['longitude'])
     else:
         location_name = data.get('locationName')
         if not location_name:

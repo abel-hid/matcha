@@ -208,3 +208,41 @@ def are_connected(user1_id, user2_id):
     """Check if two users have mutual likes"""
     from app.models import has_liked
     return has_liked(user1_id, user2_id) and has_liked(user2_id, user1_id)
+
+
+
+# Reverse geocode coordinates to a human-readable location
+import requests
+
+def reverse_geocode_location(lat, lon):
+    """
+    Given coordinates, return a human-readable place name (city/town level),
+    or None if the lookup fails. Mirrors geocode_location() but in reverse.
+    """
+    try:
+        res = requests.get(
+            'https://nominatim.openstreetmap.org/reverse',
+            params={
+                'lat': lat,
+                'lon': lon,
+                'format': 'json',
+                'zoom': 10,  # city/town level detail, not street address
+                'addressdetails': 1,
+            },
+            headers={'User-Agent': 'Matcha-App/1.0'},
+            timeout=5,
+        )
+        if res.status_code != 200:
+            return None
+        data = res.json()
+        address = data.get('address', {})
+        name = (
+            address.get('city')
+            or address.get('town')
+            or address.get('village')
+            or address.get('municipality')
+            or address.get('county')
+        )
+        return name
+    except (requests.RequestException, ValueError, KeyError):
+        return None
