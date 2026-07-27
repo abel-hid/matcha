@@ -210,14 +210,14 @@ def are_connected(user1_id, user2_id):
     return has_liked(user1_id, user2_id) and has_liked(user2_id, user1_id)
 
 
-
 # Reverse geocode coordinates to a human-readable location
 import requests
 
 def reverse_geocode_location(lat, lon):
     """
-    Given coordinates, return a human-readable place name (city/town level),
-    or None if the lookup fails. Mirrors geocode_location() but in reverse.
+    Given coordinates, return a human-readable place name down to
+    neighborhood-level detail, or None if the lookup fails.
+    Mirrors geocode_location() but in reverse.
     """
     try:
         res = requests.get(
@@ -226,7 +226,7 @@ def reverse_geocode_location(lat, lon):
                 'lat': lat,
                 'lon': lon,
                 'format': 'json',
-                'zoom': 10,  # city/town level detail, not street address
+                'zoom': 14,
                 'addressdetails': 1,
             },
             headers={'User-Agent': 'Matcha-App/1.0'},
@@ -236,13 +236,22 @@ def reverse_geocode_location(lat, lon):
             return None
         data = res.json()
         address = data.get('address', {})
-        name = (
+
+        neighborhood = (
+            address.get('neighbourhood')
+            or address.get('suburb')
+            or address.get('quarter')
+            or address.get('city_district')
+        )
+        city = (
             address.get('city')
             or address.get('town')
             or address.get('village')
             or address.get('municipality')
-            or address.get('county')
         )
-        return name
-    except (requests.RequestException, ValueError, KeyError):
+
+        if neighborhood and city and neighborhood != city:
+            return f"{neighborhood}, {city}"
+        return neighborhood or city or address.get('county')
+    except (requests.RequestException, ValueError, KeyError, TypeError):
         return None
