@@ -19,9 +19,6 @@ GOOGLE_REDIRECT_URI = os.environ['GOOGLE_REDIRECT_URI']
 
 
 def finish_login(user):
-    """Log the OAuth user in the same way password login does, then bounce
-    back to the frontend with tokens as query params (frontend reads them
-    once and stores them, same as it would after a normal /login call)."""
     models.update_user_fields(user['id'], {'is_online': True})
     access, refresh = models.get_tokens_for_user(user['id'])
     return redirect(f"{FRONTEND_URL}/oauth-callback?token={access}&refreshToken={refresh}")
