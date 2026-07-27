@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { io, Socket } from 'socket.io-client';
 import Cookie from 'js-cookie';
+import { useAuth } from '@/app/context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ?? API_BASE;
@@ -45,11 +46,12 @@ function authHeaders(): HeadersInit {
 }
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null) ;
+  const socketRef = useRef<Socket | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -70,7 +72,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     try {
       await fetch(`${API_BASE}/api/notifications/${id}/read`, { method: 'PUT', headers: authHeaders() });
     } catch {
-      
+
     }
   }, []);
 
@@ -80,11 +82,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     try {
       await fetch(`${API_BASE}/api/notifications/read-all`, { method: 'PUT', headers: authHeaders() });
     } catch {
-      
+
     }
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setConnected(false);
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
     const token = authToken();
     if (!token) return;
 
@@ -96,7 +109,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
-
     });
     socketRef.current = socket;
 
@@ -113,7 +125,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [user, refresh]);
 
   return (
     <NotificationContext.Provider
