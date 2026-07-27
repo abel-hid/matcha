@@ -471,3 +471,41 @@ def mark_all_notifications_read(user_id):
         "UPDATE notifications SET is_read = true WHERE user_id = %s AND is_read = false",
         (user_id,),
     )
+    
+# --------------------------------------------------------------- authentication 42 google
+
+def get_user_by_oauth(provider, oauth_id):
+    return query_one(
+        "SELECT * FROM users WHERE oauth_provider = %s AND oauth_id = %s",
+        (provider, oauth_id),
+    )
+
+
+def create_oauth_user(username, email, first_name, last_name, provider, oauth_id):
+    return execute(
+        """
+        INSERT INTO users (username, email, first_name, last_name,
+                            oauth_provider, oauth_id, is_verified)
+        VALUES (%s, %s, %s, %s, %s, %s, true)
+        RETURNING *
+        """,
+        (username, email, first_name, last_name, provider, oauth_id),
+        returning=True,
+    )
+
+
+def link_oauth_to_user(user_id, provider, oauth_id):
+    execute(
+        "UPDATE users SET oauth_provider = %s, oauth_id = %s, is_verified = true WHERE id = %s",
+        (provider, oauth_id, user_id),
+    )
+
+
+def generate_unique_username(base):
+    base = base.lower().replace(' ', '_')[:20] or 'user'
+    candidate = base
+    n = 0
+    while get_user_by_username(candidate):
+        n += 1
+        candidate = f"{base}{n}"
+    return candidate

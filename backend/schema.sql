@@ -1,11 +1,8 @@
--- Matcha schema, hand-written (no ORM migrations).
--- Run once: psql "$DATABASE_URL" -f schema.sql
-
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
 
@@ -23,6 +20,9 @@ CREATE TABLE IF NOT EXISTS users (
     is_verified BOOLEAN DEFAULT FALSE,
     is_online BOOLEAN DEFAULT FALSE,
     last_activity TIMESTAMP DEFAULT now(),
+
+    oauth_provider VARCHAR(20),
+    oauth_id VARCHAR(100),
 
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now(),

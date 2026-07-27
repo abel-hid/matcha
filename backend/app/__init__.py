@@ -9,6 +9,7 @@ from app.auth import auth_bp
 from app.profile import profile_bp
 from app.users import users_bp
 from app.notifications import notifications_bp
+from app.oauth import oauth_bp
 
 
 def create_app(config_class=Config):
@@ -27,6 +28,7 @@ def create_app(config_class=Config):
     app.register_blueprint(profile_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(oauth_bp)
 
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
