@@ -12,11 +12,11 @@ from app.config import Config
 _pool = None
 
 
-def init_pool():
+def init_pool(database_url=None):
     global _pool
     if _pool is None:
         _pool = psycopg2.pool.SimpleConnectionPool(
-            minconn=1, maxconn=20, dsn=Config.DATABASE_URL
+            minconn=1, maxconn=20, dsn=database_url or Config.DATABASE_URL
         )
     return _pool
 

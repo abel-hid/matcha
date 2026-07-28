@@ -5,25 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { authService } from '@/app/services/api';
 import AuthShowcase from './Authshowcase';
-
-const resetSchema = z.object({
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters long')
-    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
-    .regex(/\d/, 'Must contain at least one number')
-    .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Must contain at least one special character'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ['confirmPassword'],
-});
-
-type ResetFormData = z.infer<typeof resetSchema>;
+import { resetPasswordSchema, ResetPasswordFormData } from '@/app/lib/authValidation';
 
 const inputClasses =
   'mt-1.5 w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30';
@@ -64,8 +48,8 @@ export default function ResetPasswordForm() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<ResetFormData>({
-    resolver: zodResolver(resetSchema),
+  } = useForm<ResetPasswordFormData>({
+    resolver: zodResolver(resetPasswordSchema),
   });
 
   useEffect(() => {
@@ -93,7 +77,7 @@ export default function ResetPasswordForm() {
     };
   }, [token]);
 
-  const onSubmit = async (data: ResetFormData) => {
+  const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) return;
     setError('');
     setLoading(true);

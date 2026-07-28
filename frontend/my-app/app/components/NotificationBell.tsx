@@ -9,7 +9,7 @@ import React, {
   useState,
 } from 'react';
 import { io, Socket } from 'socket.io-client';
-import Cookie from 'js-cookie';
+import { api } from '@/app/services/api';
 import { useAuth } from '@/app/context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
@@ -24,11 +24,18 @@ export interface Notification {
   fromUser: { id: number; username: string; profilePicture: string | null } | null;
 }
 
+interface PresenceUpdate {
+  userId: number;
+  isOnline: boolean;
+  lastActivity: string | null;
+}
+
 interface NotificationContextValue {
   unreadCount: number;
   notifications: Notification[];
   loading: boolean;
   connected: boolean;
+  presenceByUser: Record<number, PresenceUpdate>;
   refresh: () => Promise<void>;
   markRead: (id: number) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -36,31 +43,25 @@ interface NotificationContextValue {
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
-function authToken(): string | null {
-  return typeof window !== 'undefined' ? Cookie.get('token') ?? null : null;
-}
-
-function authHeaders(): HeadersInit {
-  const token = authToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [presenceByUser, setPresenceByUser] = useState<Record<number, PresenceUpdate>>({});
   const socketRef = useRef<Socket | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/notifications`, { headers: authHeaders() });
-      if (!res.ok) return;
-      const data = await res.json();
+      const response = await api.get('/api/notifications');
+      const data = response.data;
       setNotifications(data.notifications ?? []);
       setUnreadCount(data.unreadCount ?? 0);
+    } catch {
+      setNotifications([]);
+      setUnreadCount(0);
     } finally {
       setLoading(false);
     }
@@ -70,7 +71,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
     setUnreadCount((prev) => Math.max(0, prev - 1));
     try {
-      await fetch(`${API_BASE}/api/notifications/${id}/read`, { method: 'PUT', headers: authHeaders() });
+      await api.put(`/api/notifications/${id}/read`);
     } catch {
 
     }
@@ -80,7 +81,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     setUnreadCount(0);
     try {
-      await fetch(`${API_BASE}/api/notifications/read-all`, { method: 'PUT', headers: authHeaders() });
+      await api.put('/api/notifications/read-all');
     } catch {
 
     }
@@ -95,16 +96,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setConnected(false);
       setNotifications([]);
       setUnreadCount(0);
+      setPresenceByUser({});
       return;
     }
-
-    const token = authToken();
-    if (!token) return;
 
     refresh();
 
     const socket = io(SOCKET_URL, {
-      auth: { token },
+      withCredentials: true,
       transports: ['websocket'],
       autoConnect: true,
       reconnection: true,
@@ -121,6 +120,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setUnreadCount((prev) => prev + 1);
     });
 
+    socket.on('presence', (presence: PresenceUpdate) => {
+      setPresenceByUser((previous) => ({
+        ...previous,
+        [presence.userId]: presence,
+      }));
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -129,7 +135,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   return (
     <NotificationContext.Provider
-      value={{ unreadCount, notifications, loading, connected, refresh, markRead, markAllRead }}
+      value={{
+        unreadCount,
+        notifications,
+        loading,
+        connected,
+        presenceByUser,
+        refresh,
+        markRead,
+        markAllRead,
+      }}
     >
       {children}
     </NotificationContext.Provider>

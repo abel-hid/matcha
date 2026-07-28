@@ -1,11 +1,24 @@
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
+from uuid import uuid4
+import re
+
 import bcrypt
+from psycopg2.extras import RealDictCursor
 from flask_jwt_extended import create_access_token, create_refresh_token
 
-from app.db import query_one, query_all, execute
+from app.db import query_one, query_all, execute, get_conn
 
 MAX_PHOTOS_PER_USER = 5
+PROFILE_LOCK_NAMESPACE = 4242
+
+
+class InvalidTagIdsError(ValueError):
+    pass
+
+
+class PhotoLimitError(ValueError):
+    pass
 
 
 # ---------------------------------------------------------------- passwords
@@ -15,12 +28,25 @@ def hash_password(password):
 
 
 def check_password(password, password_hash):
-    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    if not isinstance(password, str) or not isinstance(password_hash, str):
+        return False
+
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except (ValueError, TypeError):
+        return False
 
 
-def get_tokens_for_user(user_id):
-    identity = str(user_id)
-    return create_access_token(identity=identity), create_refresh_token(identity=identity)
+def get_tokens_for_user(user, session_id):
+    claims = {
+        'sid': session_id,
+        'ver': user['token_version'],
+    }
+    identity = str(user['id'])
+    return (
+        create_access_token(identity=identity, additional_claims=claims),
+        create_refresh_token(identity=identity, additional_claims=claims),
+    )
 
 
 def to_iso_utc(dt):
@@ -64,7 +90,7 @@ def create_user(username, email, password, first_name, last_name):
 
 
 _UPDATABLE_USER_FIELDS = {
-    'first_name', 'last_name', 'email', 'is_verified', 'gender',
+    'first_name', 'last_name', 'email', 'is_verified', 'birth_date', 'gender',
     'sexual_preferences', 'biography', 'password_hash', 'token_version',
     'is_online', 'last_activity', 'gps_consent', 'latitude', 'longitude',
     'location_name', 'location_updated_at', 'fame_rating',
@@ -78,6 +104,102 @@ def update_user_fields(user_id, fields: dict):
     set_clause = ', '.join(f"{col} = %s" for col in fields)
     params = list(fields.values()) + [user_id]
     execute(f"UPDATE users SET {set_clause}, updated_at = now() WHERE id = %s", params)
+
+
+def delete_user(user_id):
+    execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+
+# ------------------------------------------------------------------- sessions
+
+def create_session(user_id, expires_at):
+    session_id = str(uuid4())
+    execute(
+        """
+        INSERT INTO auth_sessions (id, user_id, expires_at)
+        VALUES (%s, %s, %s)
+        """,
+        (session_id, user_id, expires_at),
+    )
+    return session_id
+
+
+def is_session_active(session_id, user_id, token_version):
+    if not session_id or user_id is None or token_version is None:
+        return False
+
+    return query_one(
+        """
+        SELECT 1
+        FROM auth_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = %s
+          AND s.user_id = %s
+          AND s.revoked_at IS NULL
+          AND s.expires_at > now()
+          AND u.token_version = %s
+        """,
+        (session_id, user_id, token_version),
+    ) is not None
+
+
+def touch_session(session_id):
+    execute(
+        """
+        UPDATE auth_sessions
+        SET last_used_at = now()
+        WHERE id = %s AND revoked_at IS NULL
+        """,
+        (session_id,),
+    )
+
+
+def revoke_session(session_id):
+    if not session_id:
+        return
+
+    execute(
+        """
+        UPDATE auth_sessions
+        SET revoked_at = COALESCE(revoked_at, now())
+        WHERE id = %s
+        """,
+        (session_id,),
+    )
+
+
+def revoke_all_user_sessions(user_id):
+    execute(
+        """
+        UPDATE auth_sessions
+        SET revoked_at = COALESCE(revoked_at, now())
+        WHERE user_id = %s
+        """,
+        (user_id,),
+    )
+
+
+def reset_password_and_revoke_sessions(user_id, password, token_version):
+    with get_conn() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE users
+                SET password_hash = %s,
+                    token_version = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (hash_password(password), token_version, user_id),
+            )
+            cursor.execute(
+                """
+                UPDATE auth_sessions
+                SET revoked_at = COALESCE(revoked_at, now())
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
 
 
 # ---------------------------------------------------------------------- tags
@@ -98,30 +220,35 @@ def get_tags_for_user(user_id):
     )
 
 
-def get_or_create_tag(name):
-    tag = query_one("SELECT * FROM tags WHERE name = %s", (name,))
-    if tag:
-        return tag
-    return execute("INSERT INTO tags (name) VALUES (%s) RETURNING *", (name,), returning=True)
+def set_user_tags(user_id, tag_ids):
+    unique_tag_ids = list(dict.fromkeys(tag_ids))
 
+    with get_conn() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM tags WHERE id = ANY(%s::INTEGER[])",
+                (unique_tag_ids,),
+            )
+            valid_ids = {row[0] for row in cursor.fetchall()}
+            if valid_ids != set(unique_tag_ids):
+                raise InvalidTagIdsError('One or more selected tags are invalid')
 
-def set_user_tags(user_id, tag_names):
-    execute("DELETE FROM user_tags WHERE user_id = %s", (user_id,))
-    tags = []
-    for name in tag_names:
-        tag = get_or_create_tag(name)
-        execute(
-            "INSERT INTO user_tags (user_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-            (user_id, tag['id']),
-        )
-        tags.append(tag)
-    return tags
+            cursor.execute("DELETE FROM user_tags WHERE user_id = %s", (user_id,))
+            cursor.executemany(
+                "INSERT INTO user_tags (user_id, tag_id) VALUES (%s, %s)",
+                [(user_id, tag_id) for tag_id in unique_tag_ids],
+            )
+
+    return get_tags_for_user(user_id)
 
 
 # -------------------------------------------------------------------- photos
 
 def get_photos_for_user(user_id):
-    return query_all("SELECT * FROM photos WHERE user_id = %s ORDER BY position", (user_id,))
+    return query_all(
+        "SELECT * FROM photos WHERE user_id = %s ORDER BY position, id",
+        (user_id,),
+    )
 
 
 def count_photos(user_id):
@@ -134,61 +261,184 @@ def get_primary_photo(user_id):
 
 
 def add_photo(user_id, filename):
-    current_count = count_photos(user_id)
-    return execute(
-        """
-        INSERT INTO photos (user_id, filename, is_primary, position)
-        VALUES (%s, %s, %s, %s)
-        RETURNING *
-        """,
-        (user_id, filename, current_count == 0, current_count),
-        returning=True,
-    )
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (PROFILE_LOCK_NAMESPACE, user_id),
+            )
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS photo_count,
+                       COALESCE(MAX(position), -1) AS max_position
+                FROM photos
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            state = dict(cursor.fetchone())
+            if state['photo_count'] >= MAX_PHOTOS_PER_USER:
+                raise PhotoLimitError(
+                    f'You can have at most {MAX_PHOTOS_PER_USER} photos'
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO photos (user_id, filename, is_primary, position)
+                VALUES (%s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    user_id,
+                    filename,
+                    state['photo_count'] == 0,
+                    state['max_position'] + 1,
+                ),
+            )
+            return dict(cursor.fetchone())
 
 
 def get_photo(photo_id, user_id):
-    return query_one("SELECT * FROM photos WHERE id = %s AND user_id = %s", (photo_id, user_id))
+    return query_one(
+        "SELECT * FROM photos WHERE id = %s AND user_id = %s",
+        (photo_id, user_id),
+    )
 
 
-def delete_photo(photo_id, user_id):
-    execute("DELETE FROM photos WHERE id = %s AND user_id = %s", (photo_id, user_id))
+def delete_photo_and_promote(user_id, photo_id):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (PROFILE_LOCK_NAMESPACE, user_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM photos
+                WHERE id = %s AND user_id = %s
+                RETURNING *
+                """,
+                (photo_id, user_id),
+            )
+            deleted = cursor.fetchone()
+            if not deleted:
+                return None
+
+            cursor.execute(
+                """
+                WITH ordered AS (
+                    SELECT id, (row_number() OVER (ORDER BY position, id) - 1)::INTEGER AS new_position
+                    FROM photos
+                    WHERE user_id = %s
+                )
+                UPDATE photos p
+                SET position = ordered.new_position
+                FROM ordered
+                WHERE p.id = ordered.id
+                """,
+                (user_id,),
+            )
+
+            if deleted['is_primary']:
+                cursor.execute(
+                    """
+                    UPDATE photos
+                    SET is_primary = true
+                    WHERE id = (
+                        SELECT id
+                        FROM photos
+                        WHERE user_id = %s
+                        ORDER BY position, id
+                        LIMIT 1
+                    )
+                    """,
+                    (user_id,),
+                )
+
+            return dict(deleted)
 
 
 def set_primary_photo(photo_id, user_id):
-    execute("UPDATE photos SET is_primary = false WHERE user_id = %s", (user_id,))
-    execute("UPDATE photos SET is_primary = true WHERE id = %s AND user_id = %s", (photo_id, user_id))
+    with get_conn() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (PROFILE_LOCK_NAMESPACE, user_id),
+            )
+            cursor.execute(
+                "SELECT 1 FROM photos WHERE id = %s AND user_id = %s",
+                (photo_id, user_id),
+            )
+            if not cursor.fetchone():
+                return False
 
-
-def promote_next_photo_to_primary(user_id):
-    next_photo = query_one(
-        "SELECT * FROM photos WHERE user_id = %s ORDER BY position LIMIT 1", (user_id,)
-    )
-    if next_photo:
-        execute("UPDATE photos SET is_primary = true WHERE id = %s", (next_photo['id'],))
+            cursor.execute(
+                "UPDATE photos SET is_primary = false WHERE user_id = %s",
+                (user_id,),
+            )
+            cursor.execute(
+                "UPDATE photos SET is_primary = true WHERE id = %s AND user_id = %s",
+                (photo_id, user_id),
+            )
+            return True
 
 
 # ---------------------------------------------------------- likes/views/blocks
 
 def has_liked(liker_id, liked_id):
     return query_one(
-        "SELECT 1 FROM user_likes WHERE liker_id = %s AND liked_id = %s", (liker_id, liked_id)
+        "SELECT 1 FROM user_likes WHERE liker_id = %s AND liked_id = %s",
+        (liker_id, liked_id),
     ) is not None
 
 
+def is_connected(user_a_id, user_b_id):
+    return has_liked(user_a_id, user_b_id) and has_liked(user_b_id, user_a_id)
+
+
 def like_user(liker_id, liked_id):
-    execute(
-        "INSERT INTO user_likes (liker_id, liked_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+    inserted = execute(
+        """
+        INSERT INTO user_likes (liker_id, liked_id)
+        VALUES (%s, %s)
+        ON CONFLICT DO NOTHING
+        RETURNING liker_id
+        """,
         (liker_id, liked_id),
+        returning=True,
     )
+    if not inserted:
+        return False
+
+    clear_notification_suppression(liker_id, liked_id)
+    return True
 
 
 def unlike_user(liker_id, liked_id):
-    execute("DELETE FROM user_likes WHERE liker_id = %s AND liked_id = %s", (liker_id, liked_id))
+    was_connected = is_connected(liker_id, liked_id)
+    deleted = execute(
+        """
+        DELETE FROM user_likes
+        WHERE liker_id = %s AND liked_id = %s
+        RETURNING liker_id
+        """,
+        (liker_id, liked_id),
+        returning=True,
+    )
+    if not deleted:
+        return False, False
+
+    if was_connected:
+        suppress_notifications_from(liker_id, liked_id)
+
+    return True, was_connected
 
 
 def get_likers(user_id):
-    return query_all("""
-        SELECT u.* FROM users u
+    return query_all(
+        """
+        SELECT u.*, l.created_at AS liked_at
+        FROM users u
         JOIN user_likes l ON l.liker_id = u.id
         WHERE l.liked_id = %s
           AND NOT EXISTS (
@@ -197,7 +447,80 @@ def get_likers(user_id):
                  OR (b.blocker_id = u.id AND b.blocked_id = %s)
           )
         ORDER BY l.created_at DESC
-    """, (user_id, user_id, user_id))
+        """,
+        (user_id, user_id, user_id),
+    )
+
+
+def get_outgoing_pending_likes(user_id):
+    return query_all(
+        """
+        SELECT u.*, mine.created_at AS liked_at
+        FROM user_likes mine
+        JOIN users u ON u.id = mine.liked_id
+        WHERE mine.liker_id = %s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM user_likes reverse_like
+              WHERE reverse_like.liker_id = mine.liked_id
+                AND reverse_like.liked_id = mine.liker_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
+                 OR (b.blocker_id = u.id AND b.blocked_id = %s)
+          )
+        ORDER BY mine.created_at DESC
+        """,
+        (user_id, user_id, user_id),
+    )
+
+
+def get_incoming_pending_likes(user_id):
+    return query_all(
+        """
+        SELECT u.*, incoming.created_at AS liked_at
+        FROM user_likes incoming
+        JOIN users u ON u.id = incoming.liker_id
+        WHERE incoming.liked_id = %s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM user_likes my_like
+              WHERE my_like.liker_id = incoming.liked_id
+                AND my_like.liked_id = incoming.liker_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
+                 OR (b.blocker_id = u.id AND b.blocked_id = %s)
+          )
+        ORDER BY incoming.created_at DESC
+        """,
+        (user_id, user_id, user_id),
+    )
+
+
+def get_matches(user_id):
+    return query_all(
+        """
+        SELECT
+            u.*,
+            GREATEST(my_like.created_at, their_like.created_at) AS matched_at
+        FROM user_likes my_like
+        JOIN user_likes their_like
+          ON their_like.liker_id = my_like.liked_id
+         AND their_like.liked_id = my_like.liker_id
+        JOIN users u ON u.id = my_like.liked_id
+        WHERE my_like.liker_id = %s
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
+                 OR (b.blocker_id = u.id AND b.blocked_id = %s)
+          )
+        ORDER BY matched_at DESC
+        """,
+        (user_id, user_id, user_id),
+    )
 
 
 def set_user_online(user_id, is_online):
@@ -215,6 +538,17 @@ def set_user_online(user_id, is_online):
         )
 
 
+def reset_online_users():
+    execute(
+        """
+        UPDATE users
+        SET is_online = false,
+            last_activity = now()
+        WHERE is_online = true
+        """
+    )
+
+
 def is_blocked_either_way(user_a_id, user_b_id):
     return query_one(
         """
@@ -227,47 +561,123 @@ def is_blocked_either_way(user_a_id, user_b_id):
 
 
 def block_user(blocker_id, blocked_id):
-    execute(
-        "INSERT INTO user_blocks (blocker_id, blocked_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (blocker_id, blocked_id),
-    )
+    """
+    Create the block and remove both directed likes in one transaction.
+
+    Likes are current relationship state, not immutable history. Removing both
+    rows guarantees that blocking always disconnects the users and that an
+    unblock starts from an unrelated state.
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO user_blocks (blocker_id, blocked_id)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+                RETURNING blocker_id
+                """,
+                (blocker_id, blocked_id),
+            )
+            created = cursor.fetchone() is not None
+
+            cursor.execute(
+                """
+                DELETE FROM user_likes
+                WHERE (liker_id = %s AND liked_id = %s)
+                   OR (liker_id = %s AND liked_id = %s)
+                RETURNING liker_id, liked_id
+                """,
+                (blocker_id, blocked_id, blocked_id, blocker_id),
+            )
+            removed_likes = [dict(row) for row in cursor.fetchall()]
+
+    return {
+        'created': created,
+        'removed_likes': removed_likes,
+        'was_connected': len(removed_likes) == 2,
+    }
 
 
 def unblock_user(blocker_id, blocked_id):
-    execute("DELETE FROM user_blocks WHERE blocker_id = %s AND blocked_id = %s", (blocker_id, blocked_id))
+    return execute(
+        """
+        DELETE FROM user_blocks
+        WHERE blocker_id = %s AND blocked_id = %s
+        RETURNING blocker_id
+        """,
+        (blocker_id, blocked_id),
+        returning=True,
+    ) is not None
 
 
-VIEW_RENOTIFY_COOLDOWN = timedelta(seconds=10)  #set to 10 seconds for testing
-
-
-def record_view(viewer_id, viewed_id):
-    """
-    Insert or refresh a view timestamp.
-    Returns True if a 'view' notification should fire for this visit — i.e.
-    this is the first-ever view, or the last one was more than
-    VIEW_RENOTIFY_COOLDOWN ago. Repeated views within the cooldown (e.g. the
-    viewer refreshing the page a few times) update viewed_at but don't
-    re-trigger the notification.
-    """
-    existing = query_one(
-        "SELECT viewed_at FROM user_views WHERE viewer_id = %s AND viewed_id = %s",
-        (viewer_id, viewed_id),
+def get_blocked_users(blocker_id):
+    return query_all(
+        """
+        SELECT u.*, b.created_at AS blocked_at
+        FROM users u
+        JOIN user_blocks b ON b.blocked_id = u.id
+        WHERE b.blocker_id = %s
+        ORDER BY b.created_at DESC
+        """,
+        (blocker_id,),
     )
 
-    if existing is None:
-        execute("INSERT INTO user_views (viewer_id, viewed_id) VALUES (%s, %s)", (viewer_id, viewed_id))
-        return True
 
+def suppress_notifications_from(user_id, suppressed_user_id):
     execute(
-        "UPDATE user_views SET viewed_at = now() WHERE viewer_id = %s AND viewed_id = %s",
-        (viewer_id, viewed_id),
+        """
+        INSERT INTO notification_suppressions (user_id, suppressed_user_id)
+        VALUES (%s, %s)
+        ON CONFLICT DO NOTHING
+        """,
+        (user_id, suppressed_user_id),
     )
-    return (datetime.utcnow() - existing['viewed_at']) > VIEW_RENOTIFY_COOLDOWN
+
+
+def clear_notification_suppression(user_id, suppressed_user_id):
+    execute(
+        """
+        DELETE FROM notification_suppressions
+        WHERE user_id = %s AND suppressed_user_id = %s
+        """,
+        (user_id, suppressed_user_id),
+    )
+
+
+def notifications_are_suppressed(user_id, from_user_id):
+    if from_user_id is None:
+        return False
+
+    return query_one(
+        """
+        SELECT 1
+        FROM notification_suppressions
+        WHERE user_id = %s AND suppressed_user_id = %s
+        """,
+        (user_id, from_user_id),
+    ) is not None
+
+
+def record_view(viewer_id, viewed_id, visit_id):
+    """Insert one logical profile visit and ignore a repeated idempotency key."""
+    return execute(
+        """
+        INSERT INTO user_views (viewer_id, viewed_id, visit_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (viewer_id, visit_id) DO NOTHING
+        RETURNING *
+        """,
+        (viewer_id, viewed_id, visit_id),
+        returning=True,
+    )
 
 
 def get_viewers(user_id):
-    return query_all("""
-        SELECT u.* FROM users u
+    return query_all(
+        """
+        SELECT u.*, v.id AS view_id, v.viewed_at
+        FROM users u
         JOIN user_views v ON v.viewer_id = u.id
         WHERE v.viewed_id = %s
           AND NOT EXISTS (
@@ -275,43 +685,79 @@ def get_viewers(user_id):
               WHERE (b.blocker_id = %s AND b.blocked_id = u.id)
                  OR (b.blocker_id = u.id AND b.blocked_id = %s)
           )
-        ORDER BY v.viewed_at DESC
-    """, (user_id, user_id, user_id))
+        ORDER BY v.viewed_at DESC, v.id DESC
+        """,
+        (user_id, user_id, user_id),
+    )
 
 # -------------------------------------------------------- fame rating / etc.
 
-def update_fame_rating(user_id):
-    likes = query_one("SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s", (user_id,))['c']
-    views = query_one("SELECT COUNT(*) AS c FROM user_views WHERE viewed_id = %s", (user_id,))['c']
+def calculate_age(birth_date):
+    if not birth_date:
+        return None
 
-    user = get_user_by_id(user_id)
-    tags = get_tags_for_user(user_id)
-    photos_count = count_photos(user_id)
-
-    bonus = 0
-    if user['biography']:
-        bonus += 2
-    if user['gender'] and user['sexual_preferences']:
-        bonus += 2
-    if photos_count > 0:
-        bonus += 3
-    if tags:
-        bonus += 1
-
-    rating = round((likes * 3) + (views * 0.5) + bonus, 2)
-    execute("UPDATE users SET fame_rating = %s WHERE id = %s", (rating, user_id))
-    return rating
+    today = date.today()
+    return (
+        today.year
+        - birth_date.year
+        - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    )
 
 
 def is_profile_complete(user, tags, photos_count):
     return bool(
-        user['gender']
+        user['birth_date']
+        and user['gender']
         and user['sexual_preferences']
         and user['biography']
         and tags
         and photos_count > 0
-        and ((user['latitude'] is not None and user['longitude'] is not None) or user['location_name'])
+        and user['latitude'] is not None
+        and user['longitude'] is not None
     )
+
+
+def profile_completion_points(user, tags, photos_count):
+    points = 0
+    if user['birth_date']:
+        points += 1
+    if user['gender']:
+        points += 1
+    if user['sexual_preferences']:
+        points += 1
+    if user['biography']:
+        points += 2
+    if tags:
+        points += 1
+    if photos_count > 0:
+        points += 2
+    if user['latitude'] is not None and user['longitude'] is not None:
+        points += 2
+    return points
+
+
+def calculate_fame_rating(user_id):
+    likes = query_one(
+        "SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s",
+        (user_id,),
+    )['c']
+    views = query_one(
+        "SELECT COUNT(*) AS c FROM user_views WHERE viewed_id = %s",
+        (user_id,),
+    )['c']
+
+    user = get_user_by_id(user_id)
+    tags = get_tags_for_user(user_id)
+    photos_count = count_photos(user_id)
+    completion = profile_completion_points(user, tags, photos_count)
+
+    return round((likes * 3) + (views * 0.5) + completion, 2)
+
+
+def update_fame_rating(user_id):
+    rating = calculate_fame_rating(user_id)
+    execute("UPDATE users SET fame_rating = %s WHERE id = %s", (rating, user_id))
+    return rating
 
 
 # --------------------------------------------------------------- serializers
@@ -330,13 +776,26 @@ def user_to_dict(user, include_private=False):
     photos = get_photos_for_user(user['id'])
     primary = get_primary_photo(user['id'])
 
+    location = {'name': user['location_name']} if user['location_name'] else None
+    if include_private and (
+        user['location_name']
+        or user['latitude'] is not None
+        or user['longitude'] is not None
+    ):
+        location = {
+            'name': user['location_name'],
+            'latitude': user['latitude'],
+            'longitude': user['longitude'],
+        }
+
     data = {
         'id': user['id'],
         'username': user['username'],
         'firstName': user['first_name'],
         'lastName': user['last_name'],
+        'age': calculate_age(user['birth_date']),
         'gender': user['gender'],
-        'sexualPreferences': user['sexual_preferences'],
+        'sexualPreferences': list(user['sexual_preferences'] or []),
         'biography': user['biography'],
         'profilePicture': f"/uploads/{primary['filename']}" if primary else None,
         'photos': [photo_to_dict(p) for p in photos],
@@ -344,21 +803,46 @@ def user_to_dict(user, include_private=False):
         'tags': [t['name'] for t in tags],
         'isOnline': user['is_online'],
         'lastActivity': to_iso_utc(user['last_activity']),
-        'location': (
-            {'name': user['location_name'], 'latitude': user['latitude'], 'longitude': user['longitude']}
-            if user['latitude'] and user['longitude']
-            else ({'name': user['location_name'], 'latitude': None, 'longitude': None}
-                  if user['location_name'] else None)
-        ),
+        'location': location,
         'isProfileComplete': is_profile_complete(user, tags, len(photos)),
     }
 
     if include_private:
         data['email'] = user['email']
+        data['birthDate'] = user['birth_date'].isoformat() if user['birth_date'] else None
         data['isVerified'] = user['is_verified']
         data['gpsConsent'] = user['gps_consent']
 
     return data
+
+
+def view_to_dict(view):
+    return {
+        'id': view['view_id'],
+        'viewedAt': to_iso_utc(view['viewed_at']),
+        'viewer': user_to_dict(view),
+    }
+
+
+def like_to_dict(liker):
+    return {
+        'likedAt': to_iso_utc(liker['liked_at']),
+        'user': user_to_dict(liker),
+    }
+
+
+def match_to_dict(match):
+    return {
+        'matchedAt': to_iso_utc(match['matched_at']),
+        'user': user_to_dict(match),
+    }
+
+
+def blocked_user_to_dict(blocked_user):
+    return {
+        'blockedAt': to_iso_utc(blocked_user['blocked_at']),
+        'user': user_to_dict(blocked_user),
+    }
 
 
 # ------------------------------------------------------------------ messages
@@ -401,6 +885,7 @@ def create_report(reporter_id, reported_user_id, reason='fake_account'):
         """
         INSERT INTO reports (reporter_id, reported_user_id, reason)
         VALUES (%s, %s, %s)
+        ON CONFLICT (reporter_id, reported_user_id) DO NOTHING
         RETURNING *
         """,
         (reporter_id, reported_user_id, reason),
@@ -418,6 +903,12 @@ def has_reported(reporter_id, reported_user_id):
 # --------------------------------------------------------------- notifications
 
 def create_notification(user_id, type_, from_user_id=None, content=None):
+    if from_user_id is not None:
+        if is_blocked_either_way(user_id, from_user_id):
+            return None
+        if notifications_are_suppressed(user_id, from_user_id):
+            return None
+
     notif = execute(
         """
         INSERT INTO notifications (user_id, type, from_user_id, content)
@@ -502,10 +993,12 @@ def link_oauth_to_user(user_id, provider, oauth_id):
 
 
 def generate_unique_username(base):
-    base = base.lower().replace(' ', '_')[:20] or 'user'
+    normalized = re.sub(r'[^a-z0-9_]+', '_', base.lower())
+    normalized = re.sub(r'_+', '_', normalized).strip('_')
+    base = normalized[:40] or 'user'
     candidate = base
     n = 0
     while get_user_by_username(candidate):
         n += 1
-        candidate = f"{base}{n}"
+        candidate = f"{base[:50 - len(str(n))]}{n}"
     return candidate

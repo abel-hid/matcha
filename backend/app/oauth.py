@@ -1,42 +1,42 @@
-import os
 import secrets
 import requests
-from flask import Blueprint, request, redirect, session
+from flask import Blueprint, request, redirect, session, current_app, jsonify
 
 from app import models
+from app.auth import attach_session_cookies
 
 oauth_bp = Blueprint('oauth', __name__, url_prefix='/api/auth/oauth')
 
-FRONTEND_URL = os.environ.get('FRONTEND_URL')
-
-FORTYTWO_CLIENT_ID = os.environ['FORTYTWO_CLIENT_ID']
-FORTYTWO_CLIENT_SECRET = os.environ['FORTYTWO_CLIENT_SECRET']
-FORTYTWO_REDIRECT_URI = os.environ['FORTYTWO_REDIRECT_URI']
-
-GOOGLE_CLIENT_ID = os.environ['GOOGLE_CLIENT_ID']
-GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
-GOOGLE_REDIRECT_URI = os.environ['GOOGLE_REDIRECT_URI']
-
 
 def finish_login(user):
-    models.update_user_fields(user['id'], {'is_online': True})
-    access, refresh = models.get_tokens_for_user(user['id'])
-    return redirect(f"{FRONTEND_URL}/oauth-callback?token={access}&refreshToken={refresh}")
+    frontend_url = current_app.config['FRONTEND_URL']
+    response = redirect(f"{frontend_url}/oauth-callback")
+    return attach_session_cookies(response, user)
 
 
 def redirect_with_error(reason):
-    return redirect(f"{FRONTEND_URL}/login?error={reason}")
+    frontend_url = current_app.config['FRONTEND_URL']
+    return redirect(f"{frontend_url}/login?error={reason}")
+
+
+def oauth_not_configured(provider):
+    return jsonify({'message': f'{provider} OAuth is not configured'}), 503
 
 
 # --------------------------------------------------------------------- 42
 
 @oauth_bp.route('/42/login')
 def fortytwo_login():
+    client_id = current_app.config['FORTYTWO_CLIENT_ID']
+    redirect_uri = current_app.config['FORTYTWO_REDIRECT_URI']
+    if not client_id or not redirect_uri:
+        return oauth_not_configured('42')
+
     state = secrets.token_urlsafe(24)
     session['oauth_state_42'] = state
     params = (
-        f"?client_id={FORTYTWO_CLIENT_ID}"
-        f"&redirect_uri={FORTYTWO_REDIRECT_URI}"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
         f"&response_type=code&scope=public&state={state}"
     )
     return redirect(f"https://api.intra.42.fr/oauth/authorize{params}")
@@ -44,6 +44,12 @@ def fortytwo_login():
 
 @oauth_bp.route('/42/callback')
 def fortytwo_callback():
+    client_id = current_app.config['FORTYTWO_CLIENT_ID']
+    client_secret = current_app.config['FORTYTWO_CLIENT_SECRET']
+    redirect_uri = current_app.config['FORTYTWO_REDIRECT_URI']
+    if not all([client_id, client_secret, redirect_uri]):
+        return oauth_not_configured('42')
+
     if request.args.get('state') != session.pop('oauth_state_42', None):
         return redirect_with_error('invalid_state')
 
@@ -53,10 +59,10 @@ def fortytwo_callback():
 
     token_res = requests.post('https://api.intra.42.fr/oauth/token', data={
         'grant_type': 'authorization_code',
-        'client_id': FORTYTWO_CLIENT_ID,
-        'client_secret': FORTYTWO_CLIENT_SECRET,
+        'client_id': client_id,
+        'client_secret': client_secret,
         'code': code,
-        'redirect_uri': FORTYTWO_REDIRECT_URI,
+        'redirect_uri': redirect_uri,
     })
     if token_res.status_code != 200:
         return redirect_with_error('token_exchange_failed')
@@ -84,11 +90,16 @@ def fortytwo_callback():
 
 @oauth_bp.route('/google/login')
 def google_login():
+    client_id = current_app.config['GOOGLE_CLIENT_ID']
+    redirect_uri = current_app.config['GOOGLE_REDIRECT_URI']
+    if not client_id or not redirect_uri:
+        return oauth_not_configured('Google')
+
     state = secrets.token_urlsafe(24)
     session['oauth_state_google'] = state
     params = (
-        f"?client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
         f"&response_type=code&scope=openid%20email%20profile&state={state}"
         f"&access_type=online&prompt=select_account"
     )
@@ -97,6 +108,12 @@ def google_login():
 
 @oauth_bp.route('/google/callback')
 def google_callback():
+    client_id = current_app.config['GOOGLE_CLIENT_ID']
+    client_secret = current_app.config['GOOGLE_CLIENT_SECRET']
+    redirect_uri = current_app.config['GOOGLE_REDIRECT_URI']
+    if not all([client_id, client_secret, redirect_uri]):
+        return oauth_not_configured('Google')
+
     if request.args.get('state') != session.pop('oauth_state_google', None):
         return redirect_with_error('invalid_state')
 
@@ -106,10 +123,10 @@ def google_callback():
 
     token_res = requests.post('https://oauth2.googleapis.com/token', data={
         'grant_type': 'authorization_code',
-        'client_id': GOOGLE_CLIENT_ID,
-        'client_secret': GOOGLE_CLIENT_SECRET,
+        'client_id': client_id,
+        'client_secret': client_secret,
         'code': code,
-        'redirect_uri': GOOGLE_REDIRECT_URI,
+        'redirect_uri': redirect_uri,
     })
     if token_res.status_code != 200:
         return redirect_with_error('token_exchange_failed')

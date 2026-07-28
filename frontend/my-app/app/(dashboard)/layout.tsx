@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Discover' },
   { href: '/search', label: 'Search' },
   { href: '/profile/activity', label: 'Activity' },
+  { href: '/settings/blocked', label: 'Blocked users' },
   { href: '/messages', label: 'Messages' },
   { href: '/profile', label: 'Profile' },
 ];
@@ -34,9 +35,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setMobileOpen(false);
   }, [pathname]);
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/login');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
   };
 
   if (loading || !user) {
@@ -151,6 +156,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <div className="flex gap-4">
             <Link href="/profile" className="hover:text-[#9C8FA8]">Profile</Link>
             <Link href="/profile/activity" className="hover:text-[#9C8FA8]">Activity</Link>
+            <Link href="/settings/blocked" className="hover:text-[#9C8FA8]">Blocked users</Link>
           </div>
         </div>
       </footer>

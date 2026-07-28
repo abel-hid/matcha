@@ -4,8 +4,10 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  gender?: string;
-  sexualPreferences?: string;
+  birthDate?: string | null;
+  age?: number | null;
+  gender?: 'male' | 'female' | 'non-binary' | null;
+  sexualPreferences?: ('male' | 'female' | 'non-binary')[];
   biography?: string;
   tags?: string[];
   profilePicture?: string;
@@ -15,7 +17,6 @@ export interface User {
 }
 
 export interface AuthResponse {
-  token: string;
   user: User;
 }
 

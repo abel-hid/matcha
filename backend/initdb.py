@@ -1,19 +1,61 @@
 """
-Replaces `flask db upgrade`. Run once to create tables:
+Apply schema.sql to the configured PostgreSQL database.
 
-    python init_db.py
+Run without deleting data:
+
+    python initdb.py
+
+Recreate the public schema and delete all existing data:
+
+    python initdb.py --reset
 """
+import argparse
+from pathlib import Path
+
 import psycopg2
+
 from app.config import Config
 
-with open('schema.sql', 'r') as f:
-    schema_sql = f.read()
+BASE_DIR = Path(__file__).resolve().parent
+SCHEMA_FILE = BASE_DIR / 'schema.sql'
 
-conn = psycopg2.connect(Config.DATABASE_URL)
-try:
-    with conn.cursor() as cur:
-        cur.execute(schema_sql)
-    conn.commit()
-    print("Schema applied successfully.")
-finally:
-    conn.close()
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Apply the Matcha database schema.')
+    parser.add_argument(
+        '--reset',
+        action='store_true',
+        help='drop and recreate the public schema before applying schema.sql',
+    )
+    return parser.parse_args()
+
+
+def apply_schema(reset=False):
+    Config.validate_database()
+    schema_sql = SCHEMA_FILE.read_text(encoding='utf-8')
+
+    conn = psycopg2.connect(Config.DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            if reset:
+                print('Reset requested: all existing database data will be deleted.')
+                cur.execute('DROP SCHEMA public CASCADE')
+                cur.execute('CREATE SCHEMA public')
+
+            cur.execute(schema_sql)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    if reset:
+        print('Database reset and schema applied successfully.')
+    else:
+        print('Schema applied successfully.')
+
+
+if __name__ == '__main__':
+    args = parse_arguments()
+    apply_schema(reset=args.reset)

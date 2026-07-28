@@ -33,9 +33,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setMobileOpen(false);
   }, [pathname]);
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push('/login');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
   };
 
   if (loading || !user) {

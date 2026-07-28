@@ -6,23 +6,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link';
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod';
 import AuthShowcase from './Authshowcase'
-import {useEffect} from 'react'
-
-const signupSchema = z.object({
-  username: z.string().min(3, 'Username must be at least 3 characters'),
-  email: z.string().email('Invalid email address'),
-  firstName: z.string().min(2, 'First name is required'),
-  lastName: z.string().min(2, 'Last name is required'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ['confirmPassword'],
-});
-
-type SignupFormData = z.infer<typeof signupSchema>;
+import { useEffect } from 'react'
+import { signupSchema, SignupFormData } from '@/app/lib/authValidation';
 
 const inputClasses =
   'mt-1.5 w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30';
@@ -30,14 +16,11 @@ const inputClasses =
 const labelClasses = 'block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]';
 
 export default function SignupForm() {
-  const { signup } = useAuth();
+  const { signup, user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { user, loading: authLoading, login } = useAuth();
-
-  
   useEffect(() => {
     if (!authLoading && user) {
       router.replace('/');

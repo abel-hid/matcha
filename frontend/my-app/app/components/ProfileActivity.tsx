@@ -2,11 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { profileService } from '@/app/services/api';
+import { useNotifications } from '@/app/components/NotificationBell';
 import UserCard from './UserCard';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-type Tab = 'viewers' | 'likes';
+type Tab = 'visits' | 'likedByMe' | 'likedMe' | 'matches';
 
 interface ActivityUser {
   id: number;
@@ -20,18 +21,53 @@ interface ActivityUser {
   tags: string[];
 }
 
+interface ProfileVisit {
+  id: number;
+  viewedAt: string;
+  viewer: ActivityUser;
+}
+
+interface ProfileLike {
+  likedAt: string;
+  user: ActivityUser;
+}
+
+interface ProfileMatch {
+  matchedAt: string;
+  user: ActivityUser;
+}
+
+interface ActivityData {
+  visits: ProfileVisit[];
+  likedByMe: ProfileLike[];
+  likedMe: ProfileLike[];
+  matches: ProfileMatch[];
+}
+
+const EMPTY_ACTIVITY: ActivityData = {
+  visits: [],
+  likedByMe: [],
+  likedMe: [],
+  matches: [],
+};
+
 export default function ProfileActivity() {
-  const [tab, setTab] = useState<Tab>('viewers');
-  const [viewers, setViewers] = useState<ActivityUser[] | null>(null);
-  const [likes, setLikes] = useState<ActivityUser[] | null>(null);
+  const { presenceByUser } = useNotifications();
+  const [tab, setTab] = useState<Tab>('visits');
+  const [activity, setActivity] = useState<ActivityData>(EMPTY_ACTIVITY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([profileService.getViewers(), profileService.getLikes()])
-      .then(([viewersData, likesData]) => {
-        setViewers(viewersData.viewers);
-        setLikes(likesData.likes);
+    profileService
+      .getActivity()
+      .then((data) => {
+        setActivity({
+          visits: data.visits ?? [],
+          likedByMe: data.likedByMe ?? [],
+          likedMe: data.likedMe ?? [],
+          matches: data.matches ?? [],
+        });
       })
       .catch((err: any) => {
         setError(err.response?.data?.message || 'Failed to load your activity.');
@@ -39,37 +75,63 @@ export default function ProfileActivity() {
       .finally(() => setLoading(false));
   }, []);
 
-  const activeList = tab === 'viewers' ? viewers : likes;
+  const withPresence = (user: ActivityUser) => {
+    const presence = presenceByUser[user.id];
+    if (!presence) {
+      return user;
+    }
+
+    return {
+      ...user,
+      isOnline: presence.isOnline,
+      lastActivity: presence.lastActivity,
+    };
+  };
+
+  const counts: Record<Tab, number> = {
+    visits: activity.visits.length,
+    likedByMe: activity.likedByMe.length,
+    likedMe: activity.likedMe.length,
+    matches: activity.matches.length,
+  };
+
+  const emptyMessages: Record<Tab, string> = {
+    visits: 'No one has viewed your profile yet.',
+    likedByMe: 'You have no pending likes.',
+    likedMe: 'No pending likes received.',
+    matches: 'You have no matches yet.',
+  };
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'visits', label: 'Visits' },
+    { id: 'likedByMe', label: 'My likes' },
+    { id: 'likedMe', label: 'Liked me' },
+    { id: 'matches', label: 'Matches' },
+  ];
 
   return (
     <div className="min-h-screen bg-[#15101C] px-6 py-12">
-      <div className="mx-auto max-w-lg">
+      <div className="mx-auto max-w-2xl">
         <h1 className="font-serif text-3xl text-[#F5EFE9]">Your activity</h1>
-        <p className="mt-1 text-sm text-[#9C8FA8]">See who&apos;s been checking you out.</p>
+        <p className="mt-1 text-sm text-[#9C8FA8]">
+          Review profile visits, pending likes, and mutual matches.
+        </p>
 
-        <div className="mt-6 flex gap-1 rounded-lg border border-[#332844] bg-[#1E1728] p-1">
-          <button
-            type="button"
-            onClick={() => setTab('viewers')}
-            className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
-              tab === 'viewers'
-                ? 'bg-[#FF4D7E] text-[#15101C]'
-                : 'text-[#9C8FA8] hover:text-[#F5EFE9]'
-            }`}
-          >
-            Viewed you {viewers !== null && `(${viewers.length})`}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('likes')}
-            className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
-              tab === 'likes'
-                ? 'bg-[#FF4D7E] text-[#15101C]'
-                : 'text-[#9C8FA8] hover:text-[#F5EFE9]'
-            }`}
-          >
-            Liked you {likes !== null && `(${likes.length})`}
-          </button>
+        <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg border border-[#332844] bg-[#1E1728] p-1 sm:grid-cols-4">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`rounded-md px-2 py-2 text-sm font-medium transition ${
+                tab === item.id
+                  ? 'bg-[#FF4D7E] text-[#15101C]'
+                  : 'text-[#9C8FA8] hover:text-[#F5EFE9]'
+              }`}
+            >
+              {item.label} ({counts[item.id]})
+            </button>
+          ))}
         </div>
 
         <div className="mt-4 space-y-2">
@@ -81,19 +143,47 @@ export default function ProfileActivity() {
             </div>
           )}
 
-          {!loading && !error && activeList && activeList.length === 0 && (
+          {!loading && !error && counts[tab] === 0 && (
             <div className="rounded-lg border border-[#332844] bg-[#1E1728]/50 px-4 py-8 text-center">
-              <p className="text-sm text-[#9C8FA8]">
-                {tab === 'viewers'
-                  ? 'No one has viewed your profile yet.'
-                  : 'No one has liked you yet.'}
-              </p>
+              <p className="text-sm text-[#9C8FA8]">{emptyMessages[tab]}</p>
             </div>
           )}
 
-          {!loading &&
-            activeList &&
-            activeList.map((u) => <UserCard key={u.id} user={u} apiBaseUrl={API_BASE_URL} />)}
+          {!loading && tab === 'visits' && activity.visits.map((visit) => (
+            <UserCard
+              key={visit.id}
+              user={withPresence(visit.viewer)}
+              apiBaseUrl={API_BASE_URL}
+              meta={`Viewed ${new Date(visit.viewedAt).toLocaleString()}`}
+            />
+          ))}
+
+          {!loading && tab === 'likedByMe' && activity.likedByMe.map((like) => (
+            <UserCard
+              key={`outgoing-${like.user.id}`}
+              user={withPresence(like.user)}
+              apiBaseUrl={API_BASE_URL}
+              meta={`You liked them ${new Date(like.likedAt).toLocaleString()}`}
+            />
+          ))}
+
+          {!loading && tab === 'likedMe' && activity.likedMe.map((like) => (
+            <UserCard
+              key={`incoming-${like.user.id}`}
+              user={withPresence(like.user)}
+              apiBaseUrl={API_BASE_URL}
+              meta={`Liked you ${new Date(like.likedAt).toLocaleString()}`}
+            />
+          ))}
+
+          {!loading && tab === 'matches' && activity.matches.map((match) => (
+            <UserCard
+              key={`match-${match.user.id}`}
+              user={withPresence(match.user)}
+              apiBaseUrl={API_BASE_URL}
+              meta={`Matched ${new Date(match.matchedAt).toLocaleString()}`}
+            />
+          ))}
         </div>
       </div>
     </div>

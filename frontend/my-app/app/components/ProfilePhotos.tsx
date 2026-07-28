@@ -10,13 +10,84 @@ interface Photo {
   position: number;
 }
 
+interface PhotoProfileUpdate {
+  photos: Photo[];
+  fameRating: number;
+  isProfileComplete: boolean;
+}
+
 interface ProfilePhotosProps {
   photos: Photo[];
   apiBaseUrl: string;
-  onChange: (photos: Photo[]) => void;
+  onChange: (profile: PhotoProfileUpdate) => void;
 }
 
 const MAX_PHOTOS = 5;
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 8_000;
+const MAX_IMAGE_PIXELS = 20_000_000;
+
+const hasSupportedImageSignature = async (file: File) => {
+  const bytes = new Uint8Array(
+    await file.slice(0, 12).arrayBuffer()
+  );
+
+  const isPng = (
+    bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4E
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0D
+    && bytes[5] === 0x0A
+    && bytes[6] === 0x1A
+    && bytes[7] === 0x0A
+  );
+
+  const isJpeg = (
+    bytes.length >= 3
+    && bytes[0] === 0xFF
+    && bytes[1] === 0xD8
+    && bytes[2] === 0xFF
+  );
+
+  return isPng || isJpeg;
+};
+
+const validateImageFile = async (file: File) => {
+  if (file.size > MAX_FILE_SIZE) {
+    return 'Images must be under 5MB.';
+  }
+
+  try {
+    const hasValidSignature = await hasSupportedImageSignature(file);
+
+    if (!hasValidSignature) {
+      return 'Upload a valid PNG or JPEG image.';
+    }
+
+    const image = await createImageBitmap(file);
+
+    try {
+      if (
+        image.width <= 0
+        || image.height <= 0
+        || image.width > MAX_IMAGE_DIMENSION
+        || image.height > MAX_IMAGE_DIMENSION
+        || image.width * image.height > MAX_IMAGE_PIXELS
+      ) {
+        return 'Image dimensions are too large.';
+      }
+    } finally {
+      image.close();
+    }
+  } catch {
+    return 'Upload a valid PNG or JPEG image.';
+  }
+
+  return null;
+};
 
 export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfilePhotosProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,29 +96,43 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
   const [error, setError] = useState('');
 
   const sorted = [...photos].sort((a, b) => a.position - b.position);
-  const slots = Array.from({ length: MAX_PHOTOS }, (_, i) => sorted[i] || null);
+  const slots = Array.from({ length: MAX_PHOTOS }, (_, index) => sorted[index] || null);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const handleFileSelect = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
 
-    if (!['image/png', 'image/jpeg', 'image/gif'].includes(file.type)) {
-      setError('Please choose a PNG, JPG, or GIF image.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Images must be under 5MB.');
+    if (!file) {
       return;
     }
 
     setError('');
     setUploading(true);
+
     try {
+      const validationError = await validateImageFile(file);
+
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
       const data = await profileService.uploadPhoto(file);
-      onChange(data.photos);
+      onChange(data.user);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to upload photo.');
+      if (err.response?.data?.message) {
+        setError(err.response.data.message);
+        return;
+      }
+
+      if (err.code === 'ERR_NETWORK') {
+        setError('The backend is unavailable. Try again when it is running.');
+        return;
+      }
+
+      setError('Failed to upload photo.');
     } finally {
       setUploading(false);
     }
@@ -58,7 +143,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     setError('');
     try {
       const data = await profileService.setPrimaryPhoto(photoId);
-      onChange(data.photos);
+      onChange(data.user);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to update primary photo.');
     } finally {
@@ -71,7 +156,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     setError('');
     try {
       const data = await profileService.deletePhoto(photoId);
-      onChange(data.photos);
+      onChange(data.user);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to delete photo.');
     } finally {
@@ -82,7 +167,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
   return (
     <div>
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-        {slots.map((photo, i) =>
+        {slots.map((photo, index) =>
           photo ? (
             <div
               key={photo.id}
@@ -123,16 +208,16 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
             </div>
           ) : (
             <button
-              key={`empty-${i}`}
+              key={`empty-${index}`}
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || sorted.length >= MAX_PHOTOS}
               className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#332844] bg-[#1E1728]/50 text-[#6E6180] transition hover:border-[#FF4D7E]/50 hover:text-[#9C8FA8] disabled:opacity-50"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
-              {i === 0 && <span className="text-[10px]">Add photo</span>}
+              {index === 0 && <span className="text-[10px]">Add photo</span>}
             </button>
           )
         )}
@@ -141,7 +226,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/gif"
+        accept="image/png,image/jpeg"
         className="hidden"
         onChange={handleFileSelect}
       />

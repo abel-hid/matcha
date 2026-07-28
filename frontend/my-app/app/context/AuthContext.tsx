@@ -9,84 +9,51 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  signup: (userData: any) => Promise<void>;
-  logout: () => void;
-  setTokens: (token: string, refreshToken: string) => Promise<void>;
+  signup: (userData: unknown) => Promise<void>;
+  logout: () => Promise<void>;
+  completeOAuthLogin: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const COOKIE_OPTS = {
-  expires: 7,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
-};
-
-function clearAuthCookies() {
-  Cookies.remove('token');
-  Cookies.remove('refreshToken');
-  Cookies.remove('user');
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = Cookies.get('token');
-
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    Cookies.remove('token');
+    Cookies.remove('refreshToken');
+    Cookies.remove('user');
 
     authService.getCurrentUser()
       .then((data) => {
-        console.log('Fetched user data:', data);
         setUser(data.user);
-        setLoading(false);
       })
-      .catch((error) => {
-        if (error.response?.status === 401 || error.response?.status === 422) {
-          clearAuthCookies();
-        }
+      .catch(() => {
         setUser(null);
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await authService.login(username, password);
-    Cookies.set('token', data.token, COOKIE_OPTS);
-    Cookies.set('refreshToken', data.refreshToken, COOKIE_OPTS);
-    Cookies.set('user', JSON.stringify(data.user), COOKIE_OPTS);
     setUser(data.user);
   }, []);
 
-  const signup = useCallback(async (userData: any) => {
-    const data = await authService.signup(userData);
-    return data;
+  const signup = useCallback(async (userData: unknown) => {
+    await authService.signup(userData);
   }, []);
 
-  const setTokens = useCallback(async (token: string, refreshToken: string) => {
-    Cookies.set('token', token, COOKIE_OPTS);
-    Cookies.set('refreshToken', refreshToken, COOKIE_OPTS);
-
-    try {
-      const data = await authService.getCurrentUser();
-      Cookies.set('user', JSON.stringify(data.user), COOKIE_OPTS);
-      setUser(data.user);
-    } catch (error) {
-      clearAuthCookies();
-      setUser(null);
-      throw error;
-    }
+  const completeOAuthLogin = useCallback(async () => {
+    const data = await authService.getCurrentUser();
+    setUser(data.user);
   }, []);
 
-  const logout = useCallback(() => {
-    authService.logout();
-    clearAuthCookies();
+  const logout = useCallback(async () => {
+    await authService.logout();
     setUser(null);
   }, []);
 
@@ -97,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       signup,
       logout,
-      setTokens,
+      completeOAuthLogin,
       isAuthenticated: !!user,
     }}>
       {children}

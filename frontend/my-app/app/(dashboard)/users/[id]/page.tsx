@@ -4,8 +4,25 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { usersService } from '@/app/services/api';
+import { useNotifications } from '@/app/components/NotificationBell';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+const VISIT_DEDUPE_WINDOW_MS = 2_000;
+const recentVisitIds = new Map<number, { id: string; createdAt: number }>();
+
+function getProfileVisitId(userId: number) {
+  const now = Date.now();
+  const recent = recentVisitIds.get(userId);
+
+  if (recent && now - recent.createdAt < VISIT_DEDUPE_WINDOW_MS) {
+    return recent.id;
+  }
+
+  const id = globalThis.crypto.randomUUID();
+  recentVisitIds.set(userId, { id, createdAt: now });
+  return id;
+}
 
 interface Photo {
   id: number;
@@ -19,8 +36,9 @@ interface ViewedUser {
   username: string;
   firstName: string;
   lastName: string;
-  gender: string | null;
-  sexualPreferences: string | null;
+  age: number | null;
+  gender: 'male' | 'female' | 'non-binary' | null;
+  sexualPreferences: ('male' | 'female' | 'non-binary')[];
   biography: string | null;
   profilePicture: string | null;
   photos: Photo[];
@@ -28,11 +46,12 @@ interface ViewedUser {
   tags: string[];
   isOnline: boolean;
   lastActivity: string | null;
-  location: { name: string | null; latitude: number | null; longitude: number | null } | null;
+  location: { name: string | null } | null;
   isProfileComplete: boolean;
   hasLikedThem: boolean;
   theyLikedMe: boolean;
   isConnected: boolean;
+  hasReported: boolean;
 }
 
 function pluralize(value: number, unit: string) {
@@ -54,6 +73,7 @@ function formatLastSeen(iso: string | null) {
 export default function UserProfileView() {
   const params = useParams();
   const router = useRouter();
+  const { presenceByUser } = useNotifications();
   const userId = Number(params.id);
 
   const [user, setUser] = useState<ViewedUser | null>(null);
@@ -74,8 +94,22 @@ export default function UserProfileView() {
     }
     usersService
       .getUser(userId)
-      .then((data) => setUser(data.user))
-      .catch(() => setNotFound(true))
+      .then((data) => {
+        setUser(data.user);
+        setReported(Boolean(data.user.hasReported));
+
+        return usersService.recordVisit(userId, getProfileVisitId(userId));
+      })
+      .catch((err: any) => {
+        if (err.response?.status === 404) {
+          setNotFound(true);
+          return;
+        }
+
+        setActionError(
+          err.response?.data?.message || 'The profile could not be loaded completely.'
+        );
+      })
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -104,9 +138,7 @@ export default function UserProfileView() {
     setBlockPending(true);
     try {
       await usersService.block(user.id);
-      // Spec: a blocked user should no longer be viewable/interactable —
-      // send the person back rather than leaving them on a now-inaccessible profile.
-      router.push('/browse');
+      router.replace('/settings/blocked');
     } catch (err: any) {
       setActionError(err.response?.data?.message || 'Failed to block this user.');
       setBlockPending(false);
@@ -136,14 +168,17 @@ export default function UserProfileView() {
           <p className="mt-2 text-sm text-[#9C8FA8]">
             This user doesn&apos;t exist, or isn&apos;t available to view.
           </p>
-          <Link href="/browse" className="mt-6 inline-block text-sm font-medium text-[#F2C879] hover:text-[#F5D998]">
-            Back to browsing
+          <Link href="/" className="mt-6 inline-block text-sm font-medium text-[#F2C879] hover:text-[#F5D998]">
+            Return to dashboard
           </Link>
         </div>
       </div>
     );
   }
 
+  const presence = presenceByUser[user.id];
+  const isOnline = presence?.isOnline ?? user.isOnline;
+  const lastActivity = presence?.lastActivity ?? user.lastActivity;
   const photos = user.photos?.length ? user.photos : [];
   const currentPhoto = photos[activePhoto];
 
@@ -170,7 +205,7 @@ export default function UserProfileView() {
                 No photos yet
               </div>
             )}
-            {user.isOnline && (
+            {isOnline && (
               <span className="absolute right-3 top-3 rounded-full bg-[#4ADE80]/15 px-2.5 py-1 text-xs font-medium text-[#4ADE80]">
                 Online
               </span>
@@ -197,14 +232,14 @@ export default function UserProfileView() {
         <div className="mt-5 flex items-start justify-between">
           <div>
             <h1 className="font-serif text-3xl text-[#F5EFE9]">
-              {user.firstName} {user.lastName}
+              {user.firstName} {user.lastName}{user.age !== null ? `, ${user.age}` : ''}
             </h1>
             <p className="mt-1 text-sm text-[#9C8FA8]">
               @{user.username} ·{' '}
-              {user.isOnline ? (
+              {isOnline ? (
                 <span className="text-[#4ADE80]">Online now</span>
               ) : (
-                `Last seen ${formatLastSeen(user.lastActivity)}`
+                `Last seen ${formatLastSeen(lastActivity)}`
               )}
             </p>
             {user.location?.name && (
@@ -215,6 +250,19 @@ export default function UserProfileView() {
             <p className="text-xs uppercase tracking-wide text-[#9C8FA8]">Fame rating</p>
             <p className="font-serif text-2xl text-[#F2C879]">{user.fameRating ?? 0}</p>
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs text-[#9C8FA8]">
+          {user.gender && (
+            <span className="rounded-full border border-[#332844] px-2.5 py-1">
+              {user.gender}
+            </span>
+          )}
+          {user.sexualPreferences.map((preference) => (
+            <span key={preference} className="rounded-full border border-[#332844] px-2.5 py-1">
+              Interested in {preference}
+            </span>
+          ))}
         </div>
 
         {/* Bio */}
@@ -292,7 +340,7 @@ export default function UserProfileView() {
             disabled={reported}
             className="rounded-lg border border-[#332844] px-4 py-2.5 text-sm text-[#9C8FA8] transition hover:border-[#F2C879]/40 hover:text-[#F2C879] disabled:opacity-50"
           >
-            {reported ? 'Reported' : 'Report as fake'}
+            {reported ? 'Reported as fake account' : 'Report as fake account'}
           </button>
         </div>
       </div>

@@ -13,28 +13,31 @@ const GENDER_OPTIONS = [
   { value: '', label: 'Select…' },
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
-];
+  { value: 'non-binary', label: 'Non-binary' },
+] as const;
 
 const PREFERENCE_OPTIONS = [
-  { value: '', label: 'Select…' },
-  { value: 'heterosexual', label: 'Heterosexual' },
-  { value: 'homosexual', label: 'Homosexual' },
-  { value: 'bisexual', label: 'Bisexual' },
-];
+  { value: 'male', label: 'Men' },
+  { value: 'female', label: 'Women' },
+  { value: 'non-binary', label: 'Non-binary people' },
+] as const;
 
 const inputClasses =
   'mt-1.5 w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30';
 
 const labelClasses = 'block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]';
 
+type Gender = 'male' | 'female' | 'non-binary';
+
 interface ProfileData {
   firstName: string;
   lastName: string;
   email: string;
-  gender: string;
-  sexualPreferences: string;
-  biography: string;
+  birthDate: string | null;
+  age: number | null;
+  gender: Gender | null;
+  sexualPreferences: Gender[];
+  biography: string | null;
   tags: string[];
   photos: { id: number; url: string; isPrimary: boolean; position: number }[];
   fameRating: number;
@@ -61,46 +64,52 @@ export default function ProfileForm() {
   }, []);
 
   const updateField = <K extends keyof ProfileData>(key: K, value: ProfileData[K]) => {
-    setProfile((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setProfile((previous) => (previous ? { ...previous, [key]: value } : previous));
     setSaved(false);
   };
 
+  const togglePreference = (preference: Gender) => {
+    if (!profile) return;
 
-const handleSaveBasics = async () => {
-  if (!profile) return;
-  setSaving(true);
-  setError('');
-  setSaved(false);
-  setEmailChangeNotice(false);
-  try {
-    const data = await profileService.updateProfile({
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      email: profile.email,
-      gender: profile.gender,
-      sexualPreferences: profile.sexualPreferences,
-      biography: profile.biography,
-    });
-    setProfile(data.user);
-    setSaved(true);
-    if (data.emailChanged) {
-      setEmailChangeNotice(true);
-    }
-  } catch (err: any) {
-    setError(err.response?.data?.message || 'Failed to save your profile.');
-  } finally {
-    setSaving(false);
-  }
-};
+    const nextPreferences = profile.sexualPreferences.includes(preference)
+      ? profile.sexualPreferences.filter((value) => value !== preference)
+      : [...profile.sexualPreferences, preference];
+    updateField('sexualPreferences', nextPreferences);
+  };
 
-  const handleTagsChange = async (tags: string[]) => {
-    updateField('tags', tags);
+  const handleSaveBasics = async () => {
+    if (!profile) return;
+
+    setSaving(true);
+    setError('');
+    setSaved(false);
+    setEmailChangeNotice(false);
     try {
-      const data = await profileService.setMyTags(tags);
-      updateField('tags', data.tags);
+      const data = await profileService.updateProfile({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        birthDate: profile.birthDate || '',
+        gender: profile.gender || '',
+        sexualPreferences: profile.sexualPreferences,
+        biography: profile.biography || '',
+      });
+      setProfile(data.user);
+      setSaved(true);
+      if (data.emailChanged) {
+        setEmailChangeNotice(true);
+      }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update tags.');
+      setError(err.response?.data?.message || 'Failed to save your profile.');
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const handleTagsChange = async (tagIds: number[]) => {
+    setError('');
+    const data = await profileService.setMyTags(tagIds);
+    setProfile(data.user);
   };
 
   if (loading) {
@@ -133,8 +142,8 @@ const handleSaveBasics = async () => {
 
         {!profile.isProfileComplete && (
           <div className="mb-6 rounded-lg border border-[#F2C879]/30 bg-[#F2C879]/10 px-4 py-3 text-sm text-[#F2C879]">
-            Your profile isn&apos;t complete yet — add gender, preferences, a bio, at least one
-            tag, one photo, and your location to be visible to other users.
+            Your profile isn&apos;t complete yet — add your birth date, gender, preferences,
+            biography, at least one interest, one photo, and a usable location.
           </div>
         )}
 
@@ -144,7 +153,9 @@ const handleSaveBasics = async () => {
             <ProfilePhotos
               photos={profile.photos}
               apiBaseUrl={API_BASE_URL}
-              onChange={(photos) => updateField('photos', photos)}
+              onChange={(updated) => {
+                setProfile((previous) => previous ? { ...previous, ...updated } : previous);
+              }}
             />
           </section>
 
@@ -157,7 +168,8 @@ const handleSaveBasics = async () => {
                   <input
                     type="text"
                     value={profile.firstName}
-                    onChange={(e) => updateField('firstName', e.target.value)}
+                    onChange={(event) => updateField('firstName', event.target.value)}
+                    maxLength={50}
                     className={inputClasses}
                   />
                 </div>
@@ -166,7 +178,8 @@ const handleSaveBasics = async () => {
                   <input
                     type="text"
                     value={profile.lastName}
-                    onChange={(e) => updateField('lastName', e.target.value)}
+                    onChange={(event) => updateField('lastName', event.target.value)}
+                    maxLength={50}
                     className={inputClasses}
                   />
                 </div>
@@ -177,7 +190,8 @@ const handleSaveBasics = async () => {
                 <input
                   type="email"
                   value={profile.email}
-                  onChange={(e) => updateField('email', e.target.value)}
+                  onChange={(event) => updateField('email', event.target.value)}
+                  maxLength={100}
                   className={inputClasses}
                 />
                 <p className="mt-1 text-xs text-[#6E6180]">
@@ -187,40 +201,74 @@ const handleSaveBasics = async () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className={labelClasses}>Birth date</label>
+                  <input
+                    type="date"
+                    value={profile.birthDate || ''}
+                    onChange={(event) => updateField('birthDate', event.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                    className={inputClasses}
+                  />
+                  {profile.age !== null && (
+                    <p className="mt-1 text-xs text-[#6E6180]">Current age: {profile.age}</p>
+                  )}
+                </div>
+                <div>
                   <label className={labelClasses}>Gender</label>
                   <select
                     value={profile.gender || ''}
-                    onChange={(e) => updateField('gender', e.target.value)}
+                    onChange={(event) => updateField(
+                      'gender',
+                      event.target.value ? event.target.value as Gender : null
+                    )}
                     className={inputClasses}
                   >
-                    {GENDER_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClasses}>Sexual preferences</label>
-                  <select
-                    value={profile.sexualPreferences || ''}
-                    onChange={(e) => updateField('sexualPreferences', e.target.value)}
-                    className={inputClasses}
-                  >
-                    {PREFERENCE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
+                    {GENDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div>
+                <label className={labelClasses}>Sexual preferences</label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PREFERENCE_OPTIONS.map((option) => {
+                    const selected = profile.sexualPreferences.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => togglePreference(option.value)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition ${
+                          selected
+                            ? 'border-[#FF4D7E] bg-[#FF4D7E]/15 text-[#FF8FAE]'
+                            : 'border-[#332844] bg-[#1E1728] text-[#9C8FA8]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-xs text-[#6E6180]">
+                  Select one or more. An empty selection is saved as all genders.
+                </p>
+              </div>
+
+              <div>
                 <label className={labelClasses}>Biography</label>
                 <textarea
                   value={profile.biography || ''}
-                  onChange={(e) => updateField('biography', e.target.value)}
+                  onChange={(event) => updateField('biography', event.target.value)}
                   rows={4}
+                  maxLength={500}
                   className={inputClasses + ' resize-none'}
                   placeholder="Tell people a bit about yourself…"
                 />
+                <p className="mt-1 text-right text-xs text-[#6E6180]">
+                  {(profile.biography || '').length}/500
+                </p>
               </div>
             </div>
           </section>
@@ -235,9 +283,8 @@ const handleSaveBasics = async () => {
             <ProfileLocation
               location={profile.location}
               gpsConsent={profile.gpsConsent}
-              onChange={(location, gpsConsent) => {
-                updateField('location', location);
-                updateField('gpsConsent', gpsConsent);
+              onChange={(updated) => {
+                setProfile((previous) => previous ? { ...previous, ...updated } : previous);
               }}
             />
           </section>
@@ -248,7 +295,7 @@ const handleSaveBasics = async () => {
             </div>
           )}
 
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleSaveBasics}

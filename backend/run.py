@@ -1,7 +1,13 @@
-from app import create_app
+from app import create_app, models
 from app.sockets import socketio
 
 app = create_app()
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    models.reset_online_users()
+    socketio.run(
+        app,
+        debug=app.config['DEBUG'],
+        host=app.config['BACKEND_HOST'],
+        port=app.config['BACKEND_PORT'],
+    )

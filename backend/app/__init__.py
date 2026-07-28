@@ -14,13 +14,18 @@ from app.oauth import oauth_bp
 
 def create_app(config_class=Config):
     app = Flask(__name__)
+    config_class.validate()
     app.config.from_object(config_class)
 
-    init_pool()
+    init_pool(app.config['DATABASE_URL'])
 
     jwt.init_app(app)
     mail.init_app(app)
-    cors.init_app(app, origins=app.config['CORS_ORIGINS'])
+    cors.init_app(
+        app,
+        origins=app.config['CORS_ORIGINS'],
+        supports_credentials=True,
+    )
 
     socketio.init_app(app, cors_allowed_origins=app.config['CORS_ORIGINS'], async_mode='eventlet')
 
