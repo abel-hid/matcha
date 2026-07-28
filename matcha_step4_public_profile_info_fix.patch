@@ -1,0 +1,192 @@
+diff --git a/frontend/my-app/app/(dashboard)/users/[id]/page.tsx b/frontend/my-app/app/(dashboard)/users/[id]/page.tsx
+index 6a751a0..0b24c3a 100644
+--- a/frontend/my-app/app/(dashboard)/users/[id]/page.tsx
++++ b/frontend/my-app/app/(dashboard)/users/[id]/page.tsx
+@@ -70,6 +70,34 @@ function formatLastSeen(iso: string | null) {
+   return pluralize(days, 'day');
+ }
+ 
++const MISSING_INFORMATION = 'Not provided';
++
++function formatProfileValue(value: string) {
++  return value
++    .split('-')
++    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
++    .join('-');
++}
++
++function ProfileDetail({
++  label,
++  value,
++  missing = false,
++}: {
++  label: string;
++  value: string;
++  missing?: boolean;
++}) {
++  return (
++    <div className="rounded-lg border border-[#332844] bg-[#1A1422] px-4 py-3">
++      <p className="text-xs uppercase tracking-wide text-[#766A82]">{label}</p>
++      <p className={`mt-1 text-sm ${missing ? 'italic text-[#766A82]' : 'text-[#D8CFE0]'}`}>
++        {value}
++      </p>
++    </div>
++  );
++}
++
+ export default function UserProfileView() {
+   const params = useParams();
+   const router = useRouter();
+@@ -181,6 +209,25 @@ export default function UserProfileView() {
+   const lastActivity = presence?.lastActivity ?? user.lastActivity;
+   const photos = user.photos?.length ? user.photos : [];
+   const currentPhoto = photos[activePhoto];
++  const biography = user.biography?.trim() || '';
++  const locationName = user.location?.name?.trim() || '';
++  const preferences = user.sexualPreferences?.length
++    ? user.sexualPreferences.map(formatProfileValue).join(', ')
++    : '';
++  const missingFields = [
++    user.age === null,
++    !user.gender,
++    !preferences,
++    !biography,
++    !locationName,
++    user.tags.length === 0,
++    photos.length === 0,
++  ].filter(Boolean).length;
++  const presenceLabel = isOnline
++    ? 'Online now'
++    : lastActivity
++      ? `Last seen ${formatLastSeen(lastActivity)}`
++      : 'Last seen information unavailable';
+ 
+   return (
+     <div className="min-h-screen bg-[#15101C] px-6 py-12">
+@@ -229,22 +276,12 @@ export default function UserProfileView() {
+         </div>
+ 
+         {/* Header */}
+-        <div className="mt-5 flex items-start justify-between">
++        <div className="mt-5 flex items-start justify-between gap-4">
+           <div>
+             <h1 className="font-serif text-3xl text-[#F5EFE9]">
+-              {user.firstName} {user.lastName}{user.age !== null ? `, ${user.age}` : ''}
++              {user.firstName} {user.lastName}
+             </h1>
+-            <p className="mt-1 text-sm text-[#9C8FA8]">
+-              @{user.username} ·{' '}
+-              {isOnline ? (
+-                <span className="text-[#4ADE80]">Online now</span>
+-              ) : (
+-                `Last seen ${formatLastSeen(lastActivity)}`
+-              )}
+-            </p>
+-            {user.location?.name && (
+-              <p className="mt-0.5 text-sm text-[#9C8FA8]">{user.location.name}</p>
+-            )}
++            <p className="mt-1 text-sm text-[#9C8FA8]">@{user.username}</p>
+           </div>
+           <div className="shrink-0 text-right">
+             <p className="text-xs uppercase tracking-wide text-[#9C8FA8]">Fame rating</p>
+@@ -252,37 +289,72 @@ export default function UserProfileView() {
+           </div>
+         </div>
+ 
+-        <div className="mt-4 flex flex-wrap gap-2 text-xs text-[#9C8FA8]">
+-          {user.gender && (
+-            <span className="rounded-full border border-[#332844] px-2.5 py-1">
+-              {user.gender}
+-            </span>
+-          )}
+-          {user.sexualPreferences.map((preference) => (
+-            <span key={preference} className="rounded-full border border-[#332844] px-2.5 py-1">
+-              Interested in {preference}
+-            </span>
+-          ))}
+-        </div>
+-
+-        {/* Bio */}
+-        {user.biography && (
+-          <p className="mt-4 text-sm leading-relaxed text-[#D8CFE0]">{user.biography}</p>
++        {!user.isProfileComplete && (
++          <div className="mt-5 rounded-lg border border-[#F2C879]/30 bg-[#F2C879]/10 px-4 py-3">
++            <p className="text-sm font-medium text-[#F2C879]">Profile incomplete</p>
++            <p className="mt-1 text-xs leading-relaxed text-[#B9AC96]">
++              {missingFields} profile {missingFields === 1 ? 'field is' : 'fields are'} not provided.
++              Missing information is shown below instead of being hidden.
++            </p>
++          </div>
+         )}
+ 
+-        {/* Tags */}
+-        {user.tags?.length > 0 && (
+-          <div className="mt-4 flex flex-wrap gap-1.5">
+-            {user.tags.map((tag) => (
+-              <span
+-                key={tag}
+-                className="rounded-full bg-[#FF4D7E]/15 px-2.5 py-1 text-xs font-medium text-[#FF8FAE]"
+-              >
+-                #{tag}
+-              </span>
+-            ))}
++        <section className="mt-5 rounded-xl border border-[#332844] bg-[#1E1728] p-5">
++          <h2 className="font-serif text-xl text-[#F5EFE9]">Profile information</h2>
++          <div className="mt-4 grid gap-3 sm:grid-cols-2">
++            <ProfileDetail
++              label="Age"
++              value={user.age !== null ? `${user.age} years old` : MISSING_INFORMATION}
++              missing={user.age === null}
++            />
++            <ProfileDetail
++              label="Gender"
++              value={user.gender ? formatProfileValue(user.gender) : MISSING_INFORMATION}
++              missing={!user.gender}
++            />
++            <ProfileDetail
++              label="Interested in"
++              value={preferences || MISSING_INFORMATION}
++              missing={!preferences}
++            />
++            <ProfileDetail
++              label="Location"
++              value={locationName || MISSING_INFORMATION}
++              missing={!locationName}
++            />
++            <ProfileDetail label="Presence" value={presenceLabel} />
++            <ProfileDetail
++              label="Profile status"
++              value={user.isProfileComplete ? 'Complete' : 'Incomplete'}
++              missing={!user.isProfileComplete}
++            />
+           </div>
+-        )}
++        </section>
++
++        <section className="mt-4 rounded-xl border border-[#332844] bg-[#1E1728] p-5">
++          <h2 className="font-serif text-xl text-[#F5EFE9]">Biography</h2>
++          <p className={`mt-3 text-sm leading-relaxed ${biography ? 'text-[#D8CFE0]' : 'italic text-[#766A82]'}`}>
++            {biography || MISSING_INFORMATION}
++          </p>
++        </section>
++
++        <section className="mt-4 rounded-xl border border-[#332844] bg-[#1E1728] p-5">
++          <h2 className="font-serif text-xl text-[#F5EFE9]">Interests</h2>
++          {user.tags.length > 0 ? (
++            <div className="mt-3 flex flex-wrap gap-1.5">
++              {user.tags.map((tag) => (
++                <span
++                  key={tag}
++                  className="rounded-full bg-[#FF4D7E]/15 px-2.5 py-1 text-xs font-medium text-[#FF8FAE]"
++                >
++                  #{tag}
++                </span>
++              ))}
++            </div>
++          ) : (
++            <p className="mt-3 text-sm italic text-[#766A82]">{MISSING_INFORMATION}</p>
++          )}
++        </section>
+ 
+         {actionError && (
+           <div className="mt-5 rounded-lg border border-[#FF6B6B]/30 bg-[#FF6B6B]/10 px-3 py-2 text-sm text-[#FF8A80]">

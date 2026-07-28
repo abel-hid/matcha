@@ -1,3 +1,7 @@
+0- remove this Profile incomplete from profile
+
++ add logs to run.py backend 
+
 1- location GPS
 
 and make sure of this
@@ -8,3 +12,7 @@ and make sure of this
 	shema
 
 2- Lib for common/bad passwords
+
+3- find user by username in url not id
+
+4- Parimary picture not working
