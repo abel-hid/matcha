@@ -36,7 +36,24 @@ class ProfileModelTests(unittest.TestCase):
         }]
 
     def test_zero_coordinates_count_as_a_complete_location(self):
-        self.assertTrue(models.is_profile_complete(self.user, self.tags, 1))
+        self.assertTrue(models.is_profile_complete(self.user, self.tags, self.photos))
+
+    def test_missing_profile_fields_requires_tags_primary_photo_and_location(self):
+        incomplete = dict(self.user)
+        incomplete['biography'] = '   '
+        photos = [{**self.photos[0], 'is_primary': False}]
+
+        missing = models.missing_profile_fields(incomplete, [], photos)
+
+        self.assertIn('biography', missing)
+        self.assertIn('tags', missing)
+        self.assertIn('profilePicture', missing)
+
+    def test_photo_query_orders_primary_photo_first(self):
+        with patch('app.models.query_all', return_value=[]) as query_all:
+            models.get_photos_for_user(7)
+
+        self.assertIn('ORDER BY is_primary DESC, position, id', query_all.call_args.args[0])
 
     def test_profile_completion_points_have_one_authoritative_total(self):
         self.assertEqual(models.profile_completion_points(self.user, self.tags, 1), 10)

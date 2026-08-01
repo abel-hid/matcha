@@ -2,36 +2,21 @@
 
 import React, { useRef, useState } from 'react';
 import { profileService } from '@/app/services/api';
-
-interface Photo {
-  id: number;
-  url: string;
-  isPrimary: boolean;
-  position: number;
-}
-
-interface PhotoProfileUpdate {
-  photos: Photo[];
-  fameRating: number;
-  isProfileComplete: boolean;
-}
+import type { Photo, User } from '@/app/types';
 
 interface ProfilePhotosProps {
   photos: Photo[];
   apiBaseUrl: string;
-  onChange: (profile: PhotoProfileUpdate) => void;
+  onChange: (profile: User) => void;
 }
 
 const MAX_PHOTOS = 5;
-
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 8_000;
 const MAX_IMAGE_PIXELS = 20_000_000;
 
 const hasSupportedImageSignature = async (file: File) => {
-  const bytes = new Uint8Array(
-    await file.slice(0, 12).arrayBuffer()
-  );
+  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
 
   const isPng = (
     bytes.length >= 8
@@ -62,13 +47,11 @@ const validateImageFile = async (file: File) => {
 
   try {
     const hasValidSignature = await hasSupportedImageSignature(file);
-
     if (!hasValidSignature) {
       return 'Upload a valid PNG or JPEG image.';
     }
 
     const image = await createImageBitmap(file);
-
     try {
       if (
         image.width <= 0
@@ -95,7 +78,11 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
 
-  const sorted = [...photos].sort((a, b) => a.position - b.position);
+  const sorted = [...photos].sort((a, b) => (
+    Number(b.isPrimary) - Number(a.isPrimary)
+    || a.position - b.position
+    || a.id - b.id
+  ));
   const slots = Array.from({ length: MAX_PHOTOS }, (_, index) => sorted[index] || null);
 
   const handleFileSelect = async (
@@ -113,7 +100,6 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
 
     try {
       const validationError = await validateImageFile(file);
-
       if (validationError) {
         setError(validationError);
         return;
@@ -152,6 +138,11 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
   };
 
   const handleDelete = async (photoId: number) => {
+    if (sorted.length === 1) {
+      setError('At least one profile photo is required.');
+      return;
+    }
+
     setBusyId(photoId);
     setError('');
     try {
@@ -175,7 +166,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
             >
               <img
                 src={`${apiBaseUrl}${photo.url}`}
-                alt="Profile"
+                alt={photo.isPrimary ? 'Primary profile photo' : 'Profile photo'}
                 className="h-full w-full object-cover"
               />
 
@@ -196,14 +187,16 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
                     Set primary
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(photo.id)}
-                  disabled={busyId === photo.id}
-                  className="rounded-md border border-[#FF6B6B]/50 px-2.5 py-1 text-[11px] font-medium text-[#FF8A80] transition hover:bg-[#FF6B6B]/10 disabled:opacity-50"
-                >
-                  {busyId === photo.id ? '…' : 'Remove'}
-                </button>
+                {sorted.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(photo.id)}
+                    disabled={busyId === photo.id}
+                    className="rounded-md border border-[#FF6B6B]/50 px-2.5 py-1 text-[11px] font-medium text-[#FF8A80] transition hover:bg-[#FF6B6B]/10 disabled:opacity-50"
+                  >
+                    {busyId === photo.id ? '…' : 'Remove'}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -233,6 +226,10 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
 
       <p className="mt-2 text-xs text-[#6E6180]">
         {sorted.length} of {MAX_PHOTOS} photos {uploading && '— uploading…'}
+      </p>
+      <p className="mt-1 text-xs text-[#6E6180]">
+        At least one photo is required. The primary photo is always displayed first. Changes are
+        saved automatically.
       </p>
 
       {error && <p className="mt-2 text-sm text-[#FF8A80]">{error}</p>}

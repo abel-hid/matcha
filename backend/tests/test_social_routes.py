@@ -1,4 +1,5 @@
 import unittest
+from contextlib import ExitStack, contextmanager
 from datetime import date, datetime
 from unittest.mock import patch
 
@@ -87,20 +88,57 @@ class SocialRouteTests(unittest.TestCase):
     def delete(self, path):
         return self.client.delete(path, headers={'X-CSRF-TOKEN': self.csrf})
 
-    def session_patches(self):
-        return (
-            patch('app.models.is_session_active', return_value=True),
-            patch('app.users.models.get_user_by_id', side_effect=lambda user_id: (
-                self.current_user if user_id == 4 else self.target if user_id == 8 else None
-            )),
-        )
+    @contextmanager
+    def social_access(self, current_complete=True, target_complete=True):
+        def get_user(user_id):
+            if user_id == 4:
+                return self.current_user
+            if user_id == 8:
+                return self.target
+            return None
+
+        def get_tags(user_id):
+            complete = current_complete if user_id == 4 else target_complete
+            return [{'id': 1, 'name': 'music'}] if complete else []
+
+        def get_photos(user_id):
+            complete = current_complete if user_id == 4 else target_complete
+            if not complete:
+                return []
+            return [{
+                'id': user_id,
+                'user_id': user_id,
+                'filename': f'{user_id}.jpg',
+                'is_primary': True,
+                'position': 0,
+            }]
+
+        with ExitStack() as stack:
+            stack.enter_context(patch('app.models.is_session_active', return_value=True))
+            stack.enter_context(patch('app.models.get_user_by_id', side_effect=get_user))
+            stack.enter_context(patch('app.models.get_tags_for_user', side_effect=get_tags))
+            stack.enter_context(patch('app.models.get_photos_for_user', side_effect=get_photos))
+            yield
+
+    def test_incomplete_user_cannot_access_social_routes(self):
+        with self.social_access(current_complete=False):
+            response = self.client.get('/api/users/8')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['code'], 'PROFILE_INCOMPLETE')
+        self.assertIn('tags', response.get_json()['missingFields'])
+
+    def test_incomplete_target_is_not_public(self):
+        with self.social_access(target_complete=False):
+            response = self.client.get('/api/users/8')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()['message'], 'User not found')
 
     def test_profile_get_is_read_only_and_visit_id_is_duplicate_safe(self):
-        session_patch, user_patch = self.session_patches()
         visit_id = '22222222-2222-2222-2222-222222222222'
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.is_blocked_either_way', return_value=False),
             patch('app.users.models.record_view', side_effect=[{'id': 1}, None]) as record_view,
             patch('app.users.models.create_notification') as create_notification,
@@ -130,10 +168,8 @@ class SocialRouteTests(unittest.TestCase):
         update_fame.assert_called_once_with(8)
 
     def test_duplicate_like_returns_controlled_409(self):
-        session_patch, user_patch = self.session_patches()
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.is_blocked_either_way', return_value=False),
             patch('app.users.models.get_primary_photo', return_value={'id': 1}),
             patch('app.users.models.like_user', return_value=False),
@@ -144,10 +180,8 @@ class SocialRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()['message'], 'You already liked this user')
 
     def test_connected_unlike_creates_the_required_notification(self):
-        session_patch, user_patch = self.session_patches()
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.is_blocked_either_way', return_value=False),
             patch('app.users.models.unlike_user', return_value=(True, True)),
             patch('app.users.models.create_notification') as create_notification,
@@ -159,10 +193,8 @@ class SocialRouteTests(unittest.TestCase):
         create_notification.assert_called_once_with(8, 'unlike', from_user_id=4)
 
     def test_block_removes_both_likes_and_recalculates_both_fame_ratings(self):
-        session_patch, user_patch = self.session_patches()
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.block_user', return_value={
                 'created': True,
                 'removed_likes': [
@@ -183,10 +215,8 @@ class SocialRouteTests(unittest.TestCase):
         self.assertEqual(update_fame.call_args_list[1].args, (8,))
 
     def test_blocked_user_cannot_trigger_unlike(self):
-        session_patch, user_patch = self.session_patches()
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.is_blocked_either_way', return_value=True),
             patch('app.users.models.unlike_user') as unlike_user,
             patch('app.users.models.create_notification') as create_notification,
@@ -199,8 +229,7 @@ class SocialRouteTests(unittest.TestCase):
 
     def test_activity_endpoint_returns_four_relationship_groups(self):
         with (
-            patch('app.models.is_session_active', return_value=True),
-            patch('app.profile.models.get_user_by_id', return_value=self.current_user),
+            self.social_access(),
             patch('app.profile.models.get_viewers', return_value=[]),
             patch('app.profile.models.get_outgoing_pending_likes', return_value=[]),
             patch('app.profile.models.get_incoming_pending_likes', return_value=[]),
@@ -217,10 +246,8 @@ class SocialRouteTests(unittest.TestCase):
         })
 
     def test_duplicate_report_returns_controlled_409(self):
-        session_patch, user_patch = self.session_patches()
         with (
-            session_patch,
-            user_patch,
+            self.social_access(),
             patch('app.users.models.is_blocked_either_way', return_value=False),
             patch('app.users.models.create_report', return_value=None),
         ):
@@ -230,12 +257,10 @@ class SocialRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()['message'], 'You have already reported this user')
 
     def test_blocked_users_endpoint_returns_the_settings_list(self):
-        session_patch, _ = self.session_patches()
         blocked_row = dict(self.target)
         blocked_row['blocked_at'] = datetime(2026, 7, 28, 15, 0)
         with (
-            session_patch,
-            patch('app.users.models.get_user_by_id', return_value=self.current_user),
+            self.social_access(),
             patch('app.users.models.get_blocked_users', return_value=[blocked_row]),
             patch('app.users.models.blocked_user_to_dict', return_value={
                 'blockedAt': '2026-07-28T15:00:00Z',

@@ -22,7 +22,7 @@ export default function LoginForm() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace('/');
+      router.replace(user.isProfileComplete ? '/' : '/profile');
     }
   }, [authLoading, user, router]);
 
@@ -39,8 +39,8 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      await login(username, password);
-      router.push('/');
+      const loggedInUser = await login(username, password);
+      router.push(loggedInUser.isProfileComplete ? '/' : '/profile');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid credentials');
     } finally {

@@ -34,6 +34,8 @@ def _authenticated_socket_session():
             decoded.get('ver'),
         ):
             return None
+        if not models.is_user_profile_complete(user_id):
+            return None
         return user_id, session_id
     except (KeyError, TypeError, ValueError):
         return None

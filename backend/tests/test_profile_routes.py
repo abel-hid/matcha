@@ -98,20 +98,43 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['message'], 'Gender must be male, female, or non-binary')
 
-    def test_empty_preferences_are_saved_as_all_genders(self):
+    def test_empty_preferences_are_rejected(self):
         with (
             patch('app.models.is_session_active', return_value=True),
             patch('app.profile.models.get_user_by_id', return_value=self.user),
             patch('app.profile.models.update_user_fields') as update_fields,
-            patch('app.profile.models.update_fame_rating'),
-            patch('app.profile.private_user_response', return_value={'id': 7}),
         ):
             response = self.authenticated_put('/api/profile', {'sexualPreferences': []})
 
-        self.assertEqual(response.status_code, 200)
-        update_fields.assert_called_once_with(7, {
-            'sexual_preferences': list(GENDER_VALUES),
-        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()['message'],
+            'Select at least one sexual preference',
+        )
+        update_fields.assert_not_called()
+
+    def test_blank_required_profile_fields_are_rejected(self):
+        payloads = (
+            ({'firstName': '   '}, 'First name is required'),
+            ({'lastName': ''}, 'Last name is required'),
+            ({'email': '   '}, 'Email is required'),
+            ({'birthDate': ''}, 'Birth date is required'),
+            ({'gender': ''}, 'Gender is required'),
+            ({'biography': '   '}, 'Biography is required'),
+        )
+
+        for payload, expected_message in payloads:
+            with self.subTest(payload=payload):
+                with (
+                    patch('app.models.is_session_active', return_value=True),
+                    patch('app.profile.models.get_user_by_id', return_value=self.user),
+                    patch('app.profile.models.update_user_fields') as update_fields,
+                ):
+                    response = self.authenticated_put('/api/profile', payload)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['message'], expected_message)
+                update_fields.assert_not_called()
 
     def test_string_false_is_not_accepted_as_gps_consent(self):
         with (
@@ -258,6 +281,42 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['message'], 'latitude must be a number')
         self.assertFalse(update_fields.called)
+
+    def test_empty_tag_selection_is_rejected(self):
+        with (
+            patch('app.models.is_session_active', return_value=True),
+            patch('app.profile.models.get_user_by_id', return_value=self.user),
+            patch('app.profile.models.set_user_tags') as set_user_tags,
+        ):
+            response = self.authenticated_put('/api/profile/tags', {'tagIds': []})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['message'], 'Select at least one interest')
+        set_user_tags.assert_not_called()
+
+    def test_last_photo_cannot_be_deleted(self):
+        from app import models
+
+        with (
+            patch('app.models.is_session_active', return_value=True),
+            patch('app.profile.models.get_user_by_id', return_value=self.user),
+            patch(
+                'app.profile.models.delete_photo_and_promote',
+                side_effect=models.LastPhotoError('At least one profile photo is required'),
+            ),
+            patch('app.profile.delete_saved_image') as delete_file,
+        ):
+            response = self.client.delete(
+                '/api/profile/photos/1',
+                headers={'X-CSRF-TOKEN': self.csrf},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()['message'],
+            'At least one profile photo is required',
+        )
+        delete_file.assert_not_called()
 
     def test_unknown_tag_id_does_not_replace_existing_tags(self):
         from app import models

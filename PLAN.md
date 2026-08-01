@@ -148,18 +148,20 @@ The subject requires gender, sexual preferences, biography, reusable tags, up to
 
 ### User flow
 
-After login, the user completes:
+After the first login, the user remains on `/profile` and completes:
 
-1. Birth date.
-2. Gender.
-3. One or more preferred genders.
-4. Biography.
-5. Interests selected from the fixed tag list.
-6. Up to five photos.
-7. One primary photo.
-8. GPS location with consent or manual location.
+1. First name, last name, and email.
+2. Birth date.
+3. Gender.
+4. One or more preferred genders.
+5. A non-empty biography.
+6. At least one interest selected from the fixed tag list.
+7. Between one and five photos.
+8. One primary photo.
+9. GPS location with consent or a selected manual location.
 
-The profile becomes complete immediately when all required information exists.
+The account remains private and the rest of Matcha remains unavailable until every required value
+exists. Completion updates immediately after user information, tags, photos, or location are saved.
 
 ### Birth date and age
 
@@ -203,7 +205,8 @@ female
 non-binary
 ```
 
-An empty selection means all three.
+A new or unspecified selection starts with all three values, preserving the subject’s default
+bisexual behavior. Once editing, the user cannot save zero selected preferences.
 
 ### Fixed reusable tags
 
@@ -253,12 +256,13 @@ user_tags
 
 `tags` contains the 20 predefined rows.
 
-Updating interests will happen in one database transaction:
+Updating interests will happen automatically in one database transaction:
 
-1. Validate every selected tag ID.
-2. Remove the user’s old selections.
-3. Insert the new selections.
-4. Roll back everything if anything fails.
+1. Require at least one selected tag.
+2. Validate every selected tag ID.
+3. Remove the user’s old selections.
+4. Insert the new selections.
+5. Roll back everything if anything fails.
 
 ### Location behavior
 
@@ -309,8 +313,10 @@ We will implement:
 * actual image-content validation;
 * consistent accepted formats;
 * random unique filenames;
-* maximum five photos;
+* minimum one and maximum five photos after completion;
 * exactly one primary photo when photos exist;
+* primary photo ordered first in API responses and public-profile displays;
+* visible primary-photo indication in edit and public-profile views;
 * transaction-safe primary-photo changes;
 * physical-file deletion;
 * cleanup after failed uploads;
@@ -336,7 +342,11 @@ We will implement:
 
 ### Completion gate
 
-A user can fully complete and edit the profile, and the same completion status appears immediately in the API and frontend.
+An incomplete user is redirected to `/profile`, is not public, and cannot access social or discovery
+features. The profile becomes available immediately after every required value is present. Required
+names, email, birth date, gender, preferences, biography, tags, photo, and location cannot be cleared.
+Tags, photos, and location auto-save; the user-information Save button appears inside that section.
+The primary photo is returned and displayed first with a visible primary indicator.
 
 ---
 

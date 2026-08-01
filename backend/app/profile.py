@@ -4,6 +4,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app import models
+from app.profile_access import complete_profile_required
 from app.utils import (
     LocationServiceError,
     delete_saved_image,
@@ -93,13 +94,13 @@ def update_profile():
             email_changed = True
 
     if 'birthDate' in data:
-        birth_date, error = validate_birth_date(data['birthDate'])
+        birth_date, error = validate_birth_date(data['birthDate'], required=True)
         if error:
             return jsonify({'message': error}), 400
         updates['birth_date'] = birth_date
 
     if 'gender' in data:
-        gender, error = validate_gender(data['gender'])
+        gender, error = validate_gender(data['gender'], required=True)
         if error:
             return jsonify({'message': error}), 400
         updates['gender'] = gender
@@ -111,7 +112,7 @@ def update_profile():
         updates['sexual_preferences'] = preferences
 
     if 'biography' in data:
-        biography, error = validate_biography(data['biography'])
+        biography, error = validate_biography(data['biography'], required=True)
         if error:
             return jsonify({'message': error}), 400
         updates['biography'] = biography
@@ -167,6 +168,8 @@ def set_my_tags():
     tag_ids = data.get('tagIds')
     if not isinstance(tag_ids, list):
         return jsonify({'message': 'tagIds must be a list of integers'}), 400
+    if len(tag_ids) == 0:
+        return jsonify({'message': 'Select at least one interest'}), 400
     if len(tag_ids) > 20:
         return jsonify({'message': 'A maximum of 20 tags is allowed'}), 400
     if any(isinstance(tag_id, bool) or not isinstance(tag_id, int) for tag_id in tag_ids):
@@ -228,7 +231,10 @@ def delete_photo(photo_id):
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    photo = models.delete_photo_and_promote(user['id'], photo_id)
+    try:
+        photo = models.delete_photo_and_promote(user['id'], photo_id)
+    except models.LastPhotoError as error:
+        return jsonify({'message': str(error)}), 400
     if not photo:
         return jsonify({'message': 'Photo not found'}), 404
 
@@ -338,6 +344,7 @@ def update_location():
 
 @profile_bp.route('/viewers', methods=['GET'])
 @jwt_required()
+@complete_profile_required
 def get_viewers():
     user = get_current_user_or_404()
     if not user:
@@ -351,6 +358,7 @@ def get_viewers():
 
 @profile_bp.route('/likes', methods=['GET'])
 @jwt_required()
+@complete_profile_required
 def get_likes():
     user = get_current_user_or_404()
     if not user:
@@ -364,6 +372,7 @@ def get_likes():
 
 @profile_bp.route('/activity', methods=['GET'])
 @jwt_required()
+@complete_profile_required
 def get_activity():
     user = get_current_user_or_404()
     if not user:

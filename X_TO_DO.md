@@ -1,18 +1,10 @@
-0- remove this Profile incomplete from profile
 
-+ add logs to run.py backend 
+X- Use a better method to handle password bad/weak
 
-1- location GPS
+X- Use Docker and run one script to run everything with Docker; everything inside Docker
 
-and make sure of this
+X- Remove all error codes from the console. I want my console clean, so handle everything when you get an error code
 
-    latitude DOUBLE PRECISION CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
-    longitude DOUBLE PRECISION CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
+X- When editing or adding, the date should be 18yo to 80y
 
-	shema
-
-2- Lib for common/bad passwords
-
-3- find user by username in url not id
-
-4- Parimary picture not working
+X- Limit FAME 

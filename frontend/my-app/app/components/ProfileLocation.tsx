@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { profileService } from '@/app/services/api';
+import type { User } from '@/app/types';
 
 interface LocationValue {
   name: string | null;
@@ -15,17 +16,10 @@ interface LocationSearchResult {
   longitude: number;
 }
 
-interface LocationProfileUpdate {
-  location: LocationValue | null;
-  gpsConsent: boolean;
-  fameRating: number;
-  isProfileComplete: boolean;
-}
-
 interface ProfileLocationProps {
   location: LocationValue | null;
   gpsConsent: boolean;
-  onChange: (profile: LocationProfileUpdate) => void;
+  onChange: (profile: User) => void;
 }
 
 export default function ProfileLocation({ location, gpsConsent, onChange }: ProfileLocationProps) {

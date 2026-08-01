@@ -76,6 +76,7 @@ class SocialModelTests(unittest.TestCase):
 
     def test_notification_is_not_created_for_blocked_users(self):
         with (
+            patch('app.models.is_user_profile_complete', return_value=True),
             patch('app.models.is_blocked_either_way', return_value=True),
             patch('app.models.execute') as execute,
         ):
@@ -86,11 +87,32 @@ class SocialModelTests(unittest.TestCase):
 
     def test_notification_is_not_created_after_connected_unlike(self):
         with (
+            patch('app.models.is_user_profile_complete', return_value=True),
             patch('app.models.is_blocked_either_way', return_value=False),
             patch('app.models.notifications_are_suppressed', return_value=True),
             patch('app.models.execute') as execute,
         ):
             result = models.create_notification(4, 'view', from_user_id=8)
+
+        self.assertIsNone(result)
+        execute.assert_not_called()
+
+    def test_notification_is_not_created_for_incomplete_recipient(self):
+        with (
+            patch('app.models.is_user_profile_complete', return_value=False),
+            patch('app.models.execute') as execute,
+        ):
+            result = models.create_notification(8, 'view', from_user_id=4)
+
+        self.assertIsNone(result)
+        execute.assert_not_called()
+
+    def test_notification_is_not_created_for_incomplete_sender(self):
+        with (
+            patch('app.models.is_user_profile_complete', side_effect=[True, False]),
+            patch('app.models.execute') as execute,
+        ):
+            result = models.create_notification(8, 'view', from_user_id=4)
 
         self.assertIsNone(result)
         execute.assert_not_called()

@@ -7,6 +7,18 @@ interface RetryRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
+export function hasAuthenticationCookieHint(): boolean {
+  return Boolean(
+    Cookies.get('csrf_access_token')
+    || Cookies.get('csrf_refresh_token')
+  );
+}
+
+export function clearAuthenticationCookieHints(): void {
+  Cookies.remove('csrf_access_token');
+  Cookies.remove('csrf_refresh_token');
+}
+
 export const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
@@ -25,15 +37,19 @@ const refreshClient = axios.create({
 
 api.interceptors.request.use((config) => {
   const method = config.method?.toLowerCase();
+
   if (method && !['get', 'head', 'options'].includes(method)) {
     const cookieName = config.url === '/api/auth/refresh'
       ? 'csrf_refresh_token'
       : 'csrf_access_token';
+
     const csrfToken = Cookies.get(cookieName);
+
     if (csrfToken) {
       config.headers.set('X-CSRF-TOKEN', csrfToken);
     }
   }
+
   return config;
 });
 
@@ -44,29 +60,37 @@ api.interceptors.response.use(
     const status = error.response?.status;
 
     if (
-      originalRequest &&
-      !originalRequest._retry &&
-      (status === 401 || status === 422) &&
-      shouldRefresh(originalRequest.url)
+      originalRequest
+      && !originalRequest._retry
+      && (status === 401 || status === 422)
+      && shouldRefresh(originalRequest.url)
+      && Cookies.get('csrf_refresh_token')
     ) {
       originalRequest._retry = true;
 
       try {
         const csrfToken = Cookies.get('csrf_refresh_token');
+
         await refreshClient.post('/api/auth/refresh', {}, {
           headers: csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {},
         });
 
         const method = originalRequest.method?.toLowerCase();
+
         if (method && !['get', 'head', 'options'].includes(method)) {
           const newAccessCsrf = Cookies.get('csrf_access_token');
+
           if (newAccessCsrf) {
-            originalRequest.headers.set('X-CSRF-TOKEN', newAccessCsrf);
+            originalRequest.headers.set(
+              'X-CSRF-TOKEN',
+              newAccessCsrf
+            );
           }
         }
 
         return api(originalRequest);
       } catch {
+        clearAuthenticationCookieHints();
         return Promise.reject(error);
       }
     }
@@ -76,7 +100,9 @@ api.interceptors.response.use(
 );
 
 function shouldRefresh(url?: string): boolean {
-  if (!url) return false;
+  if (!url) {
+    return false;
+  }
 
   return ![
     '/api/auth/login',
@@ -90,7 +116,11 @@ function shouldRefresh(url?: string): boolean {
 
 export const authService = {
   login: async (username: string, password: string) => {
-    const response = await api.post('/api/auth/login', { username, password });
+    const response = await api.post('/api/auth/login', {
+      username,
+      password,
+    });
+
     return response.data;
   },
 
@@ -105,12 +135,19 @@ export const authService = {
   },
 
   forgotPassword: async (email: string) => {
-    const response = await api.post('/api/auth/forgot-password', { email });
+    const response = await api.post('/api/auth/forgot-password', {
+      email,
+    });
+
     return response.data;
   },
 
   resetPassword: async (token: string, password: string) => {
-    const response = await api.post('/api/auth/reset-password', { token, password });
+    const response = await api.post('/api/auth/reset-password', {
+      token,
+      password,
+    });
+
     return response.data;
   },
 
@@ -125,11 +162,13 @@ export const authService = {
   },
 
   verifyResetToken: async (token: string) => {
-    const response = await api.get(`/api/auth/verify-reset-token/${token}`);
+    const response = await api.get(
+      `/api/auth/verify-reset-token/${token}`
+    );
+
     return response.data;
   },
 };
-
 
 export const profileService = {
   getProfile: async () => {
@@ -156,43 +195,71 @@ export const profileService = {
   },
 
   setMyTags: async (tagIds: number[]) => {
-    const response = await api.put('/api/profile/tags', { tagIds });
+    const response = await api.put('/api/profile/tags', {
+      tagIds,
+    });
+
     return response.data;
   },
 
   uploadPhoto: async (file: File) => {
     const formData = new FormData();
     formData.append('photo', file);
-    const response = await api.post('/api/profile/photos', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+
+    const response = await api.post(
+      '/api/profile/photos',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+
     return response.data;
   },
 
   deletePhoto: async (photoId: number) => {
-    const response = await api.delete(`/api/profile/photos/${photoId}`);
+    const response = await api.delete(
+      `/api/profile/photos/${photoId}`
+    );
+
     return response.data;
   },
 
   setPrimaryPhoto: async (photoId: number) => {
-    const response = await api.put(`/api/profile/photos/${photoId}/primary`);
+    const response = await api.put(
+      `/api/profile/photos/${photoId}/primary`
+    );
+
     return response.data;
   },
 
-  updateLocationGps: async (latitude: number, longitude: number, locationName?: string) => {
+  updateLocationGps: async (
+    latitude: number,
+    longitude: number,
+    locationName?: string
+  ) => {
     const response = await api.put('/api/profile/location', {
       gpsConsent: true,
       latitude,
       longitude,
       locationName,
     });
+
     return response.data;
   },
 
   searchLocations: async (query: string) => {
-    const response = await api.get('/api/profile/location/search', {
-      params: { q: query },
-    });
+    const response = await api.get(
+      '/api/profile/location/search',
+      {
+        params: {
+          q: query,
+        },
+      }
+    );
+
     return response.data;
   },
 
@@ -207,6 +274,7 @@ export const profileService = {
       latitude,
       longitude,
     });
+
     return response.data;
   },
 
@@ -232,38 +300,65 @@ export const usersService = {
     return response.data;
   },
 
-  getUser: async (userId: number) => {
-    const response = await api.get(`/api/users/${userId}`);
+  getUserByUsername: async (username: string) => {
+    const response = await api.get(
+      `/api/users/by-username/${encodeURIComponent(username)}`
+    );
+
     return response.data;
   },
 
-  recordVisit: async (userId: number, visitId: string) => {
-    const response = await api.post(`/api/users/${userId}/visit`, { visitId });
+  recordVisit: async (
+    userId: number,
+    visitId: string
+  ) => {
+    const response = await api.post(
+      `/api/users/${userId}/visit`,
+      {
+        visitId,
+      }
+    );
+
     return response.data;
   },
- 
+
   like: async (userId: number) => {
-    const response = await api.post(`/api/users/${userId}/like`);
+    const response = await api.post(
+      `/api/users/${userId}/like`
+    );
+
     return response.data;
   },
- 
+
   unlike: async (userId: number) => {
-    const response = await api.delete(`/api/users/${userId}/like`);
+    const response = await api.delete(
+      `/api/users/${userId}/like`
+    );
+
     return response.data;
   },
- 
+
   block: async (userId: number) => {
-    const response = await api.post(`/api/users/${userId}/block`);
+    const response = await api.post(
+      `/api/users/${userId}/block`
+    );
+
     return response.data;
   },
- 
+
   unblock: async (userId: number) => {
-    const response = await api.delete(`/api/users/${userId}/block`);
+    const response = await api.delete(
+      `/api/users/${userId}/block`
+    );
+
     return response.data;
   },
- 
+
   report: async (userId: number) => {
-    const response = await api.post(`/api/users/${userId}/report`);
+    const response = await api.post(
+      `/api/users/${userId}/report`
+    );
+
     return response.data;
   },
 };

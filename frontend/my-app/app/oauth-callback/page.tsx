@@ -21,7 +21,7 @@ export default function OAuthCallbackPage() {
     }
 
     completeOAuthLogin()
-      .then(() => router.replace('/'))
+      .then((user) => router.replace(user.isProfileComplete ? '/' : '/profile'))
       .catch(() => router.replace('/login?error=session_failed'));
   }, [completeOAuthLogin, params, router]);
 

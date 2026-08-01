@@ -60,7 +60,8 @@ The backend listens on the configured `BACKEND_HOST` and `BACKEND_PORT`. The saf
 In another terminal, from `frontend/my-app/`:
 
 ```bash
-./start-dev.sh
+npm ci
+npm run dev
 ```
 
 The frontend is available at `http://localhost:3000` by default.
@@ -89,7 +90,7 @@ The frontend automatically uses the refresh cookie when the short access token e
 
 ## Profile data model
 
-The profile stores `birth_date` and calculates age dynamically. Gender uses `male`, `female`, or `non-binary`. Sexual preferences are stored as a PostgreSQL array of those same values; an empty submitted selection becomes all three genders.
+The profile stores `birth_date` and calculates age dynamically. Gender uses `male`, `female`, or `non-binary`. Sexual preferences are stored as a PostgreSQL array of those same values. New users start with all three values for the required default-bisexual behavior, but profile editing cannot save an empty preference array.
 
 The `tags` table is seeded with exactly 20 approved reusable interests. Users select existing tag IDs and cannot create arbitrary tags. Tag replacement runs in one transaction.
 
@@ -108,7 +109,28 @@ Uploaded photos are validated by decoded image content, re-encoded as PNG or JPE
 
 Every valid public-profile visit creates a separate `user_views` row with its own timestamp. Mutual likes are derived from the two directional `user_likes` rows. A connected unlike removes only the current user's like, records the mandatory unlike notification, and suppresses future notifications from the disconnected user until the current user likes them again.
 
-Blocking keeps existing history and likes but prevents profile access, interaction, and new notifications in both directions. Users can unblock from `/settings/blocked`. Fake-account reporting remains one button and one unique report row per pair.
+Blocking keeps historical visits, reports, and notifications, removes likes in both directions, and prevents profile access, interaction, and new notifications. Users can unblock from `/settings/blocked`, but old likes are not restored. Fake-account reporting remains one button and one unique report row per pair.
+
+## Profile completion gate
+
+After the first login, an incomplete account is restricted to `/profile`. The backend also enforces
+this rule, so changing the URL or calling social endpoints directly does not bypass it.
+
+Completion requires first name, last name, email, birth date, gender, at least one sexual preference,
+a non-empty biography, at least one predefined tag, at least one photo with one primary photo, and a
+usable GPS or manual location.
+
+Until completion:
+
+- the account is not returned as a public profile;
+- other profiles, activity, notifications, blocks, browse, search, messages, and Socket.IO presence are unavailable;
+- authentication and profile-completion routes remain available.
+
+User information is saved with the button inside that section. Tags, photos, and location save
+automatically. The final selected preference, tag, and photo cannot be removed. The primary photo is
+ordered first and visibly marked in edit and public-profile views.
+
+This correction does not change the database schema, so it does not require a database reset.
 
 ## Backend routes
 

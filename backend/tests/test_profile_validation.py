@@ -32,11 +32,23 @@ class ProfileValidationTests(unittest.TestCase):
         self.assertIsNone(value)
         self.assertEqual(error, 'Gender must be male, female, or non-binary')
 
-    def test_empty_preferences_mean_all_genders(self):
+    def test_empty_preferences_are_rejected(self):
         preferences, error = validate_sexual_preferences([])
 
-        self.assertIsNone(error)
-        self.assertEqual(preferences, list(GENDER_VALUES))
+        self.assertIsNone(preferences)
+        self.assertEqual(error, 'Select at least one sexual preference')
+
+    def test_required_profile_values_cannot_be_blank(self):
+        birth_date, birth_error = validate_birth_date('', required=True)
+        gender, gender_error = validate_gender('', required=True)
+        biography, biography_error = validate_biography('   ', required=True)
+
+        self.assertIsNone(birth_date)
+        self.assertEqual(birth_error, 'Birth date is required')
+        self.assertIsNone(gender)
+        self.assertEqual(gender_error, 'Gender is required')
+        self.assertIsNone(biography)
+        self.assertEqual(biography_error, 'Biography is required')
 
     def test_invalid_preference_is_rejected(self):
         preferences, error = validate_sexual_preferences(['male', 'unsupported'])

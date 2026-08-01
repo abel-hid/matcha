@@ -4,6 +4,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import models
+from app.profile_access import complete_profile_required
+from app.validation import validate_username
 
 users_bp = Blueprint('users', __name__, url_prefix='/api/users')
 
@@ -15,8 +17,40 @@ def get_current_user_or_404():
     return models.get_user_by_id(int(user_id))
 
 
+def get_visible_target(current_user_id, target_user_id):
+    target = models.get_user_by_id(target_user_id)
+    if not target:
+        return None
+    if not models.is_user_profile_complete(target_user_id):
+        return None
+    if models.is_blocked_either_way(current_user_id, target_user_id):
+        return None
+    return target
+
+
+def get_visible_target_by_username(current_user_id, username):
+    target = models.get_user_by_username(username)
+    if not target:
+        return None
+    if not models.is_user_profile_complete(target['id']):
+        return None
+    if models.is_blocked_either_way(current_user_id, target['id']):
+        return None
+    return target
+
+
+def profile_response_data(current_user_id, target):
+    data = models.user_to_dict(target, include_private=False)
+    data['hasLikedThem'] = models.has_liked(current_user_id, target['id'])
+    data['theyLikedMe'] = models.has_liked(target['id'], current_user_id)
+    data['isConnected'] = data['hasLikedThem'] and data['theyLikedMe']
+    data['hasReported'] = models.has_reported(current_user_id, target['id'])
+    return data
+
+
 @users_bp.route('/blocked', methods=['GET'])
 @jwt_required()
+@complete_profile_required
 def get_blocked_users():
     current_user = get_current_user_or_404()
     if not current_user:
@@ -30,29 +64,48 @@ def get_blocked_users():
 
 @users_bp.route('/<int:user_id>', methods=['GET'])
 @jwt_required()
+@complete_profile_required
 def get_user_profile(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
         return jsonify({'message': 'User not found'}), 404
 
-    if models.is_blocked_either_way(current_user['id'], target['id']):
+    return jsonify({
+        'user': profile_response_data(current_user['id'], target)
+    }), 200
+
+
+@users_bp.route('/by-username/<string:username>', methods=['GET'])
+@jwt_required()
+@complete_profile_required
+def get_user_profile_by_username(username):
+    current_user = get_current_user_or_404()
+    if not current_user:
         return jsonify({'message': 'User not found'}), 404
 
-    data = models.user_to_dict(target, include_private=False)
-    data['hasLikedThem'] = models.has_liked(current_user['id'], target['id'])
-    data['theyLikedMe'] = models.has_liked(target['id'], current_user['id'])
-    data['isConnected'] = data['hasLikedThem'] and data['theyLikedMe']
-    data['hasReported'] = models.has_reported(current_user['id'], target['id'])
+    username, error = validate_username(username)
+    if error:
+        return jsonify({'message': 'User not found'}), 404
 
-    return jsonify({'user': data}), 200
+    target = get_visible_target_by_username(
+        current_user['id'],
+        username,
+    )
+    if not target:
+        return jsonify({'message': 'User not found'}), 404
+
+    return jsonify({
+        'user': profile_response_data(current_user['id'], target)
+    }), 200
 
 
 @users_bp.route('/<int:user_id>/visit', methods=['POST'])
 @jwt_required()
+@complete_profile_required
 def record_profile_visit(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -61,11 +114,8 @@ def record_profile_visit(user_id):
     if current_user['id'] == user_id:
         return jsonify({'message': 'You cannot record a visit to your own profile'}), 400
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
-        return jsonify({'message': 'User not found'}), 404
-
-    if models.is_blocked_either_way(current_user['id'], target['id']):
         return jsonify({'message': 'User not found'}), 404
 
     data = request.get_json(silent=True)
@@ -96,6 +146,7 @@ def record_profile_visit(user_id):
 
 @users_bp.route('/<int:user_id>/like', methods=['POST'])
 @jwt_required()
+@complete_profile_required
 def like_user(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -104,11 +155,8 @@ def like_user(user_id):
     if current_user['id'] == user_id:
         return jsonify({'message': 'You cannot like yourself'}), 400
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
-        return jsonify({'message': 'User not found'}), 404
-
-    if models.is_blocked_either_way(current_user['id'], target['id']):
         return jsonify({'message': 'User not found'}), 404
 
     if not models.get_primary_photo(current_user['id']):
@@ -131,6 +179,7 @@ def like_user(user_id):
 
 @users_bp.route('/<int:user_id>/like', methods=['DELETE'])
 @jwt_required()
+@complete_profile_required
 def unlike_user(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -139,11 +188,8 @@ def unlike_user(user_id):
     if current_user['id'] == user_id:
         return jsonify({'message': 'You cannot unlike yourself'}), 400
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
-        return jsonify({'message': 'User not found'}), 404
-
-    if models.is_blocked_either_way(current_user['id'], target['id']):
         return jsonify({'message': 'User not found'}), 404
 
     removed, was_connected = models.unlike_user(current_user['id'], target['id'])
@@ -160,6 +206,7 @@ def unlike_user(user_id):
 
 @users_bp.route('/<int:user_id>/block', methods=['POST'])
 @jwt_required()
+@complete_profile_required
 def block_user(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -168,7 +215,7 @@ def block_user(user_id):
     if current_user['id'] == user_id:
         return jsonify({'message': 'You cannot block yourself'}), 400
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
         return jsonify({'message': 'User not found'}), 404
 
@@ -186,6 +233,7 @@ def block_user(user_id):
 
 @users_bp.route('/<int:user_id>/block', methods=['DELETE'])
 @jwt_required()
+@complete_profile_required
 def unblock_user(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -199,6 +247,7 @@ def unblock_user(user_id):
 
 @users_bp.route('/<int:user_id>/report', methods=['POST'])
 @jwt_required()
+@complete_profile_required
 def report_user(user_id):
     current_user = get_current_user_or_404()
     if not current_user:
@@ -207,11 +256,8 @@ def report_user(user_id):
     if current_user['id'] == user_id:
         return jsonify({'message': 'You cannot report yourself'}), 400
 
-    target = models.get_user_by_id(user_id)
+    target = get_visible_target(current_user['id'], user_id)
     if not target:
-        return jsonify({'message': 'User not found'}), 404
-
-    if models.is_blocked_either_way(current_user['id'], target['id']):
         return jsonify({'message': 'User not found'}), 404
 
     report = models.create_report(current_user['id'], user_id)

@@ -164,9 +164,9 @@ Sexual preferences use a multi-select containing:
 - `female`
 - `non-binary`
 
-A user may select one or more values.
-
-An empty or unspecified preference means all three genders, satisfying the subject’s default bisexual behavior.
+A user must keep at least one selected value. A new or unspecified preference starts with all
+three genders selected, satisfying the subject’s default bisexual behavior, but an existing profile
+cannot be saved with zero selected preferences.
 
 Compatibility must be mutual:
 
@@ -201,6 +201,35 @@ The approved tags are:
 - vegan
 - anime
 - volunteering
+
+### Profile completion gate
+
+After the first successful login, an incomplete user remains on `/profile` until every required
+profile value exists.
+
+A complete profile requires:
+
+- first name;
+- last name;
+- email;
+- birth date;
+- gender;
+- at least one sexual preference;
+- a non-empty biography;
+- at least one predefined tag;
+- at least one photo with one primary photo;
+- a usable GPS or manual location.
+
+While incomplete:
+
+- the account is not publicly viewable;
+- the user cannot view or interact with other profiles;
+- browse, search, activity, notifications, blocks, messages, map, call, and date features remain unavailable;
+- only authentication actions and the profile-completion routes remain available.
+
+After completion, required values cannot be cleared. Tags, photos, and location save automatically.
+The explicit profile Save button applies only to the user-information section. The primary photo is
+stored and displayed first and must be visibly identified.
 
 ### Block behavior
 

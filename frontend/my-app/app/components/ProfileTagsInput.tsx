@@ -31,7 +31,14 @@ export default function ProfileTagsInput({ value, onChange }: ProfileTagsInputPr
     const selectedIds = allTags
       .filter((option) => value.includes(option.name))
       .map((option) => option.id);
-    const nextIds = selectedIds.includes(tag.id)
+    const selected = selectedIds.includes(tag.id);
+
+    if (selected && selectedIds.length === 1) {
+      setError('Select at least one interest.');
+      return;
+    }
+
+    const nextIds = selected
       ? selectedIds.filter((id) => id !== tag.id)
       : [...selectedIds, tag.id];
 
@@ -74,7 +81,7 @@ export default function ProfileTagsInput({ value, onChange }: ProfileTagsInputPr
       </div>
 
       <p className="mt-2 text-xs text-[#6E6180]">
-        Select from the approved reusable interests. Custom tags are not accepted.
+        Select at least one reusable interest. Changes are saved automatically.
       </p>
       {error && <p className="mt-2 text-sm text-[#FF8A80]">{error}</p>}
     </div>

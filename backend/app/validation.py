@@ -71,8 +71,10 @@ def validate_name(value, field_name):
     return name, None
 
 
-def validate_birth_date(value):
+def validate_birth_date(value, required=False):
     if value is None or value == '':
+        if required:
+            return None, 'Birth date is required'
         return None, None
     if not isinstance(value, str):
         return None, 'Birth date must be a string in YYYY-MM-DD format'
@@ -90,8 +92,10 @@ def validate_birth_date(value):
     return birth_date, None
 
 
-def validate_gender(value):
+def validate_gender(value, required=False):
     if value is None or value == '':
+        if required:
+            return None, 'Gender is required'
         return None, None
     if not isinstance(value, str):
         return None, 'Gender must be a string'
@@ -114,18 +118,22 @@ def validate_sexual_preferences(value):
             preferences.append(preference)
 
     if not preferences:
-        preferences = list(GENDER_VALUES)
+        return None, 'Select at least one sexual preference'
 
     return preferences, None
 
 
-def validate_biography(value):
+def validate_biography(value, required=False):
     if value is None:
+        if required:
+            return None, 'Biography is required'
         return None, None
     if not isinstance(value, str):
         return None, 'Biography must be a string'
 
     biography = value.strip()
+    if required and not biography:
+        return None, 'Biography is required'
     if len(biography) > BIOGRAPHY_MAX_LENGTH:
         return None, f'Biography must be at most {BIOGRAPHY_MAX_LENGTH} characters long'
 

@@ -21,6 +21,10 @@ class PhotoLimitError(ValueError):
     pass
 
 
+class LastPhotoError(ValueError):
+    pass
+
+
 # ---------------------------------------------------------------- passwords
 
 def hash_password(password):
@@ -246,7 +250,7 @@ def set_user_tags(user_id, tag_ids):
 
 def get_photos_for_user(user_id):
     return query_all(
-        "SELECT * FROM photos WHERE user_id = %s ORDER BY position, id",
+        "SELECT * FROM photos WHERE user_id = %s ORDER BY is_primary DESC, position, id",
         (user_id,),
     )
 
@@ -313,6 +317,21 @@ def delete_photo_and_promote(user_id, photo_id):
                 (PROFILE_LOCK_NAMESPACE, user_id),
             )
             cursor.execute(
+                "SELECT * FROM photos WHERE id = %s AND user_id = %s",
+                (photo_id, user_id),
+            )
+            photo = cursor.fetchone()
+            if not photo:
+                return None
+
+            cursor.execute(
+                "SELECT COUNT(*) AS photo_count FROM photos WHERE user_id = %s",
+                (user_id,),
+            )
+            if cursor.fetchone()['photo_count'] <= 1:
+                raise LastPhotoError('At least one profile photo is required')
+
+            cursor.execute(
                 """
                 DELETE FROM photos
                 WHERE id = %s AND user_id = %s
@@ -321,13 +340,13 @@ def delete_photo_and_promote(user_id, photo_id):
                 (photo_id, user_id),
             )
             deleted = cursor.fetchone()
-            if not deleted:
-                return None
 
             cursor.execute(
                 """
                 WITH ordered AS (
-                    SELECT id, (row_number() OVER (ORDER BY position, id) - 1)::INTEGER AS new_position
+                    SELECT id, (row_number() OVER (
+                        ORDER BY is_primary DESC, position, id
+                    ) - 1)::INTEGER AS new_position
                     FROM photos
                     WHERE user_id = %s
                 )
@@ -343,7 +362,8 @@ def delete_photo_and_promote(user_id, photo_id):
                 cursor.execute(
                     """
                     UPDATE photos
-                    SET is_primary = true
+                    SET is_primary = true,
+                        position = 0
                     WHERE id = (
                         SELECT id
                         FROM photos
@@ -360,16 +380,17 @@ def delete_photo_and_promote(user_id, photo_id):
 
 def set_primary_photo(photo_id, user_id):
     with get_conn() as conn:
-        with conn.cursor() as cursor:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(%s, %s)",
                 (PROFILE_LOCK_NAMESPACE, user_id),
             )
             cursor.execute(
-                "SELECT 1 FROM photos WHERE id = %s AND user_id = %s",
+                "SELECT position FROM photos WHERE id = %s AND user_id = %s",
                 (photo_id, user_id),
             )
-            if not cursor.fetchone():
+            target = cursor.fetchone()
+            if not target:
                 return False
 
             cursor.execute(
@@ -377,7 +398,22 @@ def set_primary_photo(photo_id, user_id):
                 (user_id,),
             )
             cursor.execute(
-                "UPDATE photos SET is_primary = true WHERE id = %s AND user_id = %s",
+                """
+                UPDATE photos
+                SET position = position + 1
+                WHERE user_id = %s
+                  AND id <> %s
+                  AND position < %s
+                """,
+                (user_id, photo_id, target['position']),
+            )
+            cursor.execute(
+                """
+                UPDATE photos
+                SET is_primary = true,
+                    position = 0
+                WHERE id = %s AND user_id = %s
+                """,
                 (photo_id, user_id),
             )
             return True
@@ -704,16 +740,50 @@ def calculate_age(birth_date):
     )
 
 
-def is_profile_complete(user, tags, photos_count):
-    return bool(
-        user['birth_date']
-        and user['gender']
-        and user['sexual_preferences']
-        and user['biography']
-        and tags
-        and photos_count > 0
-        and user['latitude'] is not None
-        and user['longitude'] is not None
+def missing_profile_fields(user, tags, photos):
+    missing = []
+
+    if not str(user.get('first_name') or '').strip():
+        missing.append('firstName')
+    if not str(user.get('last_name') or '').strip():
+        missing.append('lastName')
+    if not str(user.get('email') or '').strip():
+        missing.append('email')
+    if not user.get('birth_date'):
+        missing.append('birthDate')
+    if not user.get('gender'):
+        missing.append('gender')
+    if not user.get('sexual_preferences'):
+        missing.append('sexualPreferences')
+    if not str(user.get('biography') or '').strip():
+        missing.append('biography')
+    if not tags:
+        missing.append('tags')
+    if not any(photo['is_primary'] for photo in photos):
+        missing.append('profilePicture')
+    if (
+        not str(user.get('location_name') or '').strip()
+        or user.get('latitude') is None
+        or user.get('longitude') is None
+    ):
+        missing.append('location')
+
+    return missing
+
+
+def is_profile_complete(user, tags, photos):
+    return len(missing_profile_fields(user, tags, photos)) == 0
+
+
+def is_user_profile_complete(user_id):
+    user = get_user_by_id(user_id)
+    if not user:
+        return False
+
+    return is_profile_complete(
+        user,
+        get_tags_for_user(user_id),
+        get_photos_for_user(user_id),
     )
 
 
@@ -804,7 +874,8 @@ def user_to_dict(user, include_private=False):
         'isOnline': user['is_online'],
         'lastActivity': to_iso_utc(user['last_activity']),
         'location': location,
-        'isProfileComplete': is_profile_complete(user, tags, len(photos)),
+        'isProfileComplete': is_profile_complete(user, tags, photos),
+        'missingProfileFields': missing_profile_fields(user, tags, photos),
     }
 
     if include_private:
@@ -903,7 +974,12 @@ def has_reported(reporter_id, reported_user_id):
 # --------------------------------------------------------------- notifications
 
 def create_notification(user_id, type_, from_user_id=None, content=None):
+    if not is_user_profile_complete(user_id):
+        return None
+
     if from_user_id is not None:
+        if not is_user_profile_complete(from_user_id):
+            return None
         if is_blocked_either_way(user_id, from_user_id):
             return None
         if notifications_are_suppressed(user_id, from_user_id):
