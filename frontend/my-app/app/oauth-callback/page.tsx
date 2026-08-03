@@ -1,21 +1,30 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Suspense,
+  useEffect,
+  useRef,
+} from 'react';
+import {
+  useRouter,
+  useSearchParams,
+} from 'next/navigation';
+
 import { useAuth } from '@/app/context/AuthContext';
 
-export default function OAuthCallbackPage() {
+function OAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const { setTokens } = useAuth();
+  const { completeOAuthLogin } = useAuth();
   const hasRun = useRef(false);
 
   useEffect(() => {
-    if (hasRun.current) return;
+    if (hasRun.current) {
+      return;
+    }
+
     hasRun.current = true;
 
-    const token = params.get('token');
-    const refreshToken = params.get('refreshToken');
     const error = params.get('error');
 
     if (error) {
@@ -23,14 +32,34 @@ export default function OAuthCallbackPage() {
       return;
     }
 
-    if (token && refreshToken) {
-      setTokens(token, refreshToken)
-        .then(() => router.replace('/'))
-        .catch(() => router.replace('/login?error=token_exchange_failed'));
-    } else {
-      router.replace('/login');
-    }
-  }, [params, router, setTokens]);
+    completeOAuthLogin()
+      .then((user) => {
+        router.replace(
+          user.isProfileComplete
+            ? '/'
+            : '/profile'
+        );
+      })
+      .catch(() => {
+        router.replace('/login?error=session_failed');
+      });
+  }, [
+    completeOAuthLogin,
+    params,
+    router,
+  ]);
 
   return <div className="min-h-screen bg-[#15101C]" />;
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={(
+        <div className="min-h-screen bg-[#15101C]" />
+      )}
+    >
+      <OAuthCallbackContent />
+    </Suspense>
+  );
 }

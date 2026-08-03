@@ -1,0 +1,3 @@
+- one start file
+- colors picturs in seed
+- no output in terminal

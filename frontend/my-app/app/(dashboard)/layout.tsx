@@ -8,9 +8,11 @@ import { NotificationBell } from '@/app/components/NotificationBell';
 
 const NAV_LINKS = [
   { href: '/', label: 'Discover' },
-  { href: '/search', label: 'Search' },
+  { href: '/map', label: 'Map' },
   { href: '/profile/activity', label: 'Activity' },
+  { href: '/settings/blocked', label: 'Blocked users' },
   { href: '/messages', label: 'Messages' },
+  { href: '/dates', label: 'Dates' },
   { href: '/profile', label: 'Profile' },
 ];
 
@@ -23,6 +25,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -31,28 +34,72 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }, [loading, user, router]);
 
   useEffect(() => {
+    if (!loading && user && !user.isProfileComplete && pathname !== '/profile') {
+      router.replace('/profile');
+    }
+  }, [loading, pathname, router, user]);
+
+  useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
+  const handleLogout = async () => {
+    setLogoutError('');
+    try {
+      await logout();
+      router.push('/login');
+    } catch {
+      setLogoutError('Logout failed. Check that the backend is running and try again.');
+    }
   };
 
   if (loading || !user) {
     return <div className="min-h-screen bg-[#15101C]" />;
   }
 
+  if (!user.isProfileComplete) {
+    return (
+      <div className="flex min-h-screen flex-col bg-[#15101C]">
+        <header className="sticky top-0 z-20 border-b border-[#332844] bg-[#15101C]/95 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+            <Link href="/profile" className="font-serif text-xl text-[#F5EFE9]">
+              matcha
+            </Link>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs text-[#9C8FA8] sm:inline">
+                Complete your profile to continue
+              </span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg border border-[#332844] px-3 py-1.5 text-sm text-[#9C8FA8] transition hover:border-[#FF6B6B]/40 hover:text-[#FF8A80]"
+              >
+                Log out
+              </button>
+            </div>
+          </div>
+          {logoutError && (
+            <div className="border-t border-[#FF6B6B]/20 bg-[#FF6B6B]/10 px-6 py-2 text-center text-sm text-[#FF8A80]">
+              {logoutError}
+            </div>
+          )}
+        </header>
+
+        <main className="flex-1">
+          {pathname === '/profile' ? children : <div className="min-h-screen bg-[#15101C]" />}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-[#15101C]">
-      {/* Header */}
       <header className="sticky top-0 z-20 border-b border-[#332844] bg-[#15101C]/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="font-serif text-xl text-[#F5EFE9]">
             matcha
           </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden items-center gap-1 md:flex">
             {NAV_LINKS.map((link) => {
               const active = pathname === link.href;
@@ -89,12 +136,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </button>
           </div>
 
-          {/* Mobile controls: bell always visible, menu toggle next to it */}
           <div className="flex items-center gap-1 md:hidden">
             <NotificationBell />
             <button
               type="button"
-              onClick={() => setMobileOpen((v) => !v)}
+              onClick={() => setMobileOpen((value) => !value)}
               className="flex h-9 w-9 items-center justify-center rounded-md text-[#F5EFE9]"
               aria-label="Toggle menu"
             >
@@ -109,7 +155,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
 
-        {/* Mobile nav */}
+        {logoutError && (
+          <div className="border-t border-[#FF6B6B]/20 bg-[#FF6B6B]/10 px-6 py-2 text-center text-sm text-[#FF8A80]">
+            {logoutError}
+          </div>
+        )}
+
         {mobileOpen && (
           <nav className="border-t border-[#332844] px-6 py-3 md:hidden">
             <div className="flex flex-col gap-1">
@@ -141,16 +192,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
         )}
       </header>
 
-      {/* Main */}
       <main className="flex-1">{children}</main>
 
-      {/* Footer */}
       <footer className="border-t border-[#332844] px-6 py-6">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-2 text-xs text-[#6E6180] sm:flex-row">
           <span>&copy; {new Date().getFullYear()} Matcha</span>
           <div className="flex gap-4">
             <Link href="/profile" className="hover:text-[#9C8FA8]">Profile</Link>
             <Link href="/profile/activity" className="hover:text-[#9C8FA8]">Activity</Link>
+            <Link href="/map" className="hover:text-[#9C8FA8]">Map</Link>
+            <Link href="/dates" className="hover:text-[#9C8FA8]">Dates</Link>
+            <Link href="/settings/blocked" className="hover:text-[#9C8FA8]">Blocked users</Link>
           </div>
         </div>
       </footer>

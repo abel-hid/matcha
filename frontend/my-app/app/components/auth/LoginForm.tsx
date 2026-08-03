@@ -22,7 +22,7 @@ export default function LoginForm() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace('/');
+      router.replace(user.isProfileComplete ? '/' : '/profile');
     }
   }, [authLoading, user, router]);
 
@@ -39,8 +39,8 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      await login(username, password);
-      router.push('/');
+      const loggedInUser = await login(username, password);
+      router.push(loggedInUser.isProfileComplete ? '/' : '/profile');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid credentials');
     } finally {
@@ -83,6 +83,9 @@ export default function LoginForm() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                minLength={3}
+                maxLength={50}
+                pattern="[A-Za-z0-9_]+"
                 autoComplete="username"
                 className="w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30"
                 placeholder="Enter your username"
@@ -102,6 +105,7 @@ export default function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                maxLength={72}
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30"
                 placeholder="Enter your password"
@@ -173,12 +177,20 @@ function oauthErrorMessage(code: string): string {
     case 'invalid_state':
       return 'Login session expired. Please try again.';
     case 'missing_code':
+    case 'access_denied':
       return 'Login was cancelled.';
     case 'token_exchange_failed':
     case 'profile_fetch_failed':
+    case 'provider_unavailable':
+    case 'invalid_provider_response':
+    case 'invalid_provider_profile':
       return 'Something went wrong connecting to that provider. Please try again.';
     case 'email_not_verified':
       return 'Your Google email must be verified to sign in.';
+    case 'session_failed':
+      return 'The login completed, but the secure session could not be created.';
+    case 'oauth_identity_conflict':
+      return 'This provider identity is already linked to another account.';
     default:
       return 'Login failed. Please try again.';
   }

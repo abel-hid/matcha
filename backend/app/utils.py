@@ -1,65 +1,63 @@
 import os
-import re
-from datetime import datetime, timedelta
-from flask import url_for
+import secrets
+import warnings
+from html import escape as html_escape
+
+import requests
+from flask import current_app, has_app_context
 from flask_mail import Message
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from werkzeug.utils import secure_filename
-from PIL import Image
-from geopy.geocoders import Nominatim
+from PIL import Image, ImageOps, UnidentifiedImageError
 from geopy.distance import geodesic
-import bcrypt
 
 from app.extensions import mail
 from app.config import Config
 
-# Password validation
-def validate_password(password):
-    """Validate password strength"""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    if not re.search(r'[A-Z]', password):
-        return False, "Password must contain at least one uppercase letter"
-    if not re.search(r'[a-z]', password):
-        return False, "Password must contain at least one lowercase letter"
-    if not re.search(r'\d', password):
-        return False, "Password must contain at least one number"
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        return False, "Password must contain at least one special character"
-
-    common_passwords = ['password', '123456', 'qwerty', 'admin', 'letmein', 'welcome']
-    if password.lower() in common_passwords:
-        return False, "Password is too common"
-
-    return True, "Password is valid"
-
-# Email validation
-def validate_email(email):
-    """Validate email format"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
 # Generate verification token
-def generate_verification_token(email):
-    """Generate email verification token"""
-    serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
-    return serializer.dumps(email, salt='email-verification')
+def generate_verification_token(user):
+    """Generate a one-time email verification token for the current address."""
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    return serializer.dumps(
+        {
+            'user_id': user['id'],
+            'email': user['email'],
+            'nonce': secrets.token_urlsafe(16),
+        },
+        salt='email-verification',
+    )
 
 # Verify token
 def verify_verification_token(token, expiration=3600):
-    """Verify email verification token"""
-    serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
+    """Return (payload, reason) for an email verification token."""
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
     try:
-        email = serializer.loads(token, salt='email-verification', max_age=expiration)
-        return email
-    except (SignatureExpired, BadSignature):
-        return None
+        payload = serializer.loads(token, salt='email-verification', max_age=expiration)
+        if not isinstance(payload, dict):
+            return None, 'invalid'
+        if (
+            not isinstance(payload.get('user_id'), int)
+            or not isinstance(payload.get('email'), str)
+            or not isinstance(payload.get('nonce'), str)
+        ):
+            return None, 'invalid'
+        return payload, None
+    except SignatureExpired:
+        return None, 'expired'
+    except BadSignature:
+        return None, 'invalid'
 
 # Generate password reset token
 def generate_reset_token(email, token_version):
     """Generate a single-use password reset token, tied to the user's current token_version"""
-    serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
-    return serializer.dumps({'email': email, 'v': token_version}, salt='password-reset')
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    return serializer.dumps(
+        {
+            'email': email,
+            'v': token_version,
+            'nonce': secrets.token_urlsafe(16),
+        },
+        salt='password-reset',
+    )
 
 # Verify password reset token
 def verify_reset_token(token, expiration=3600):
@@ -68,9 +66,17 @@ def verify_reset_token(token, expiration=3600):
     Returns (payload, None) on success, or (None, reason) on failure,
     where reason is 'expired' or 'invalid'.
     """
-    serializer = URLSafeTimedSerializer(Config.SECRET_KEY)
+    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
     try:
         data = serializer.loads(token, salt='password-reset', max_age=expiration)
+        if not isinstance(data, dict):
+            return None, 'invalid'
+        if (
+            not isinstance(data.get('email'), str)
+            or not isinstance(data.get('v'), int)
+            or not isinstance(data.get('nonce'), str)
+        ):
+            return None, 'invalid'
         return data, None
     except SignatureExpired:
         return None, 'expired'
@@ -89,12 +95,14 @@ def send_email(subject, recipients, html_body, text_body=None):
 # Send verification email
 def send_verification_email(user):
     """Send email verification link. `user` is a dict from app.models."""
-    token = generate_verification_token(user['email'])
-    verify_url = f"{Config.FRONTEND_URL}/verify?token={token}"
+    token = generate_verification_token(user)
+    verify_url = f"{current_app.config['FRONTEND_URL']}/verify?token={token}"
+
+    first_name = html_escape(user['first_name'])
 
     html = f"""
     <h1>Welcome to Matcha!</h1>
-    <p>Hi {user['first_name']},</p>
+    <p>Hi {first_name},</p>
     <p>Please click the link below to verify your email address:</p>
     <p><a href="{verify_url}">{verify_url}</a></p>
     <p>This link will expire in 1 hour.</p>
@@ -106,18 +114,25 @@ def send_verification_email(user):
     send_email(
         subject="Verify Your Email - Matcha",
         recipients=[user['email']],
-        html_body=html
+        html_body=html,
+        text_body=(
+            f"Hi {user['first_name']},\n\n"
+            f"Verify your Matcha email address: {verify_url}\n\n"
+            "This link expires in 1 hour."
+        ),
     )
 
 # Send password reset email
 def send_password_reset_email(user):
     """Send password reset link. `user` is a dict from app.models."""
     token = generate_reset_token(user['email'], user['token_version'])
-    reset_url = f"{Config.FRONTEND_URL}/reset-password?token={token}"
+    reset_url = f"{current_app.config['FRONTEND_URL']}/reset-password?token={token}"
+
+    first_name = html_escape(user['first_name'])
 
     html = f"""
     <h1>Reset Your Password</h1>
-    <p>Hi {user['first_name']},</p>
+    <p>Hi {first_name},</p>
     <p>Click the link below to reset your password:</p>
     <p><a href="{reset_url}">{reset_url}</a></p>
     <p>This link will expire in 1 hour.</p>
@@ -129,129 +144,225 @@ def send_password_reset_email(user):
     send_email(
         subject="Reset Password - Matcha",
         recipients=[user['email']],
-        html_body=html
+        html_body=html,
+        text_body=(
+            f"Hi {user['first_name']},\n\n"
+            f"Reset your Matcha password: {reset_url}\n\n"
+            "This link expires in 1 hour."
+        ),
     )
-
-# File upload validation
-def allowed_file(filename):
-    """Check if file extension is allowed"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
 # Save uploaded image
 def save_image(file):
-    """Save uploaded image with validation and optimization"""
-    if not allowed_file(file.filename):
+    """Validate image content, remove metadata, and save a random server filename."""
+    if not file or not file.filename:
         return None
-
-    filename = secure_filename(file.filename)
-    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-    filename = f"{timestamp}_{filename}"
 
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+    Image.MAX_IMAGE_PIXELS = Config.MAX_IMAGE_PIXELS
 
-    filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
-    file.save(filepath) 
+    temp_path = None
+    final_path = None
 
     try:
-        img = Image.open(filepath)
-        img.thumbnail((800, 800), Image.Resampling.LANCZOS)
-        img.save(filepath, optimize=True, quality=85)
-    except Exception:
-        os.remove(filepath)
+        file.stream.seek(0, os.SEEK_END)
+        if file.stream.tell() > Config.MAX_IMAGE_FILE_SIZE:
+            return None
+        file.stream.seek(0)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(file.stream) as image:
+                image.verify()
+
+        file.stream.seek(0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(file.stream) as source:
+                image_format = source.format
+                if image_format not in Config.ALLOWED_IMAGE_FORMATS:
+                    return None
+                if (
+                    source.width > Config.MAX_IMAGE_DIMENSION
+                    or source.height > Config.MAX_IMAGE_DIMENSION
+                    or source.width * source.height > Config.MAX_IMAGE_PIXELS
+                ):
+                    return None
+
+                image = ImageOps.exif_transpose(source)
+                image.load()
+                image.thumbnail(Config.IMAGE_OUTPUT_MAX_SIZE, Image.Resampling.LANCZOS)
+
+                extension = 'jpg' if image_format == 'JPEG' else 'png'
+                filename = f'{secrets.token_hex(24)}.{extension}'
+                final_path = os.path.join(Config.UPLOAD_FOLDER, filename)
+                temp_path = os.path.join(Config.UPLOAD_FOLDER, f'.{filename}.tmp')
+
+                if image_format == 'JPEG':
+                    image.convert('RGB').save(
+                        temp_path,
+                        format='JPEG',
+                        optimize=True,
+                        quality=85,
+                    )
+                else:
+                    if image.mode not in {'RGB', 'RGBA', 'L', 'LA', 'P'}:
+                        image = image.convert('RGBA')
+                    image.save(temp_path, format='PNG', optimize=True)
+
+        os.replace(temp_path, final_path)
+        return filename
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+    ):
+        for path in (temp_path, final_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         return None
 
-    return filepath
+
+def delete_saved_image(filename):
+    """Delete one generated upload filename without allowing path traversal."""
+    if not filename or os.path.basename(filename) != filename:
+        return False
+
+    upload_folder = os.path.realpath(Config.UPLOAD_FOLDER)
+    filepath = os.path.realpath(os.path.join(upload_folder, filename))
+    if os.path.commonpath([upload_folder, filepath]) != upload_folder:
+        return False
+
+    try:
+        os.remove(filepath)
+        return True
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
 
 # Calculate distance between two locations
 def calculate_distance(lat1, lon1, lat2, lon2):
-    """Calculate distance between two points in kilometers"""
-    if not all([lat1, lon1, lat2, lon2]):
+    """Calculate distance between two points in kilometers."""
+    if any(value is None for value in (lat1, lon1, lat2, lon2)):
         return float('inf')
     return geodesic((lat1, lon1), (lat2, lon2)).kilometers
 
-# Geocode location name to coordinates
-def geocode_location(location_name):
-    """Convert location name to coordinates"""
-    if not location_name:
-        return None, None
+class LocationServiceError(Exception):
+    pass
 
-    geolocator = Nominatim(user_agent="matcha-app")
+
+def location_config(name):
+    if has_app_context():
+        return current_app.config[name]
+    return getattr(Config, name)
+
+
+def nominatim_get(path, params):
     try:
-        location = geolocator.geocode(location_name, timeout=10)
-        if location:
-            return location.latitude, location.longitude
-    except Exception:
-        pass
-    return None, None
+        response = requests.get(
+            f"{location_config('NOMINATIM_URL')}{path}",
+            params=params,
+            headers={
+                'User-Agent': location_config('NOMINATIM_USER_AGENT'),
+                'Accept-Language': 'en,fr,ar',
+            },
+            timeout=location_config('NOMINATIM_TIMEOUT_SECONDS'),
+        )
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, ValueError) as exc:
+        if has_app_context():
+            current_app.logger.warning('Location provider request failed: %s', exc)
+        raise LocationServiceError('Location provider is unavailable') from exc
 
-# Calculate fame rating
-def calculate_fame_rating(user_id):
-    """
-    Kept for backward compatibility with any caller that just wants a number
-    without persisting it. `app.models.update_fame_rating` is the version
-    used by the routes — it computes this same way and saves it.
-    """
-    from app.db import query_one
-    likes_count = query_one(
-        "SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s", (user_id,)
-    )['c']
-    views_count = query_one(
-        "SELECT COUNT(*) AS c FROM user_views WHERE viewed_id = %s", (user_id,)
-    )['c']
 
-    rating = (likes_count * 2) + (views_count * 0.5)
-    return round(rating, 2)
+def compact_location_name(result):
+    address = result.get('address') or {}
+    local_name = (
+        result.get('name')
+        or address.get('neighbourhood')
+        or address.get('suburb')
+        or address.get('quarter')
+        or address.get('city_district')
+        or address.get('borough')
+    )
+    city = (
+        address.get('city')
+        or address.get('town')
+        or address.get('village')
+        or address.get('municipality')
+    )
+    region = address.get('state') or address.get('region')
+    country = address.get('country')
+
+    parts = []
+    for value in (local_name, city, region, country):
+        if value and value not in parts:
+            parts.append(value)
+
+    if parts:
+        return ', '.join(parts)
+    return result.get('display_name')
+
+
+def search_locations(location_name, limit=5):
+    data = nominatim_get('/search', {
+        'q': location_name,
+        'format': 'jsonv2',
+        'addressdetails': 1,
+        'dedupe': 1,
+        'limit': limit,
+    })
+    if not isinstance(data, list):
+        return []
+
+    results = []
+    seen = set()
+    for item in data:
+        try:
+            latitude = float(item['lat'])
+            longitude = float(item['lon'])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        name = compact_location_name(item)
+        if not name:
+            continue
+
+        key = (round(latitude, 6), round(longitude, 6), name)
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append({
+            'name': name,
+            'latitude': latitude,
+            'longitude': longitude,
+        })
+
+    return results
+
+
+def reverse_geocode_location(latitude, longitude):
+    data = nominatim_get('/reverse', {
+        'lat': latitude,
+        'lon': longitude,
+        'format': 'jsonv2',
+        'zoom': 14,
+        'addressdetails': 1,
+    })
+    if not isinstance(data, dict) or data.get('error'):
+        return None
+    return compact_location_name(data)
+
 
 # Check if two users are connected (mutual like)
 def are_connected(user1_id, user2_id):
     """Check if two users have mutual likes"""
     from app.models import has_liked
     return has_liked(user1_id, user2_id) and has_liked(user2_id, user1_id)
-
-
-# Reverse geocode coordinates to a human-readable location
-import requests
-
-def reverse_geocode_location(lat, lon):
-    """
-    Given coordinates, return a human-readable place name down to
-    neighborhood-level detail, or None if the lookup fails.
-    Mirrors geocode_location() but in reverse.
-    """
-    try:
-        res = requests.get(
-            'https://nominatim.openstreetmap.org/reverse',
-            params={
-                'lat': lat,
-                'lon': lon,
-                'format': 'json',
-                'zoom': 14,
-                'addressdetails': 1,
-            },
-            headers={'User-Agent': 'Matcha-App/1.0'},
-            timeout=5,
-        )
-        if res.status_code != 200:
-            return None
-        data = res.json()
-        address = data.get('address', {})
-
-        neighborhood = (
-            address.get('neighbourhood')
-            or address.get('suburb')
-            or address.get('quarter')
-            or address.get('city_district')
-        )
-        city = (
-            address.get('city')
-            or address.get('town')
-            or address.get('village')
-            or address.get('municipality')
-        )
-
-        if neighborhood and city and neighborhood != city:
-            return f"{neighborhood}, {city}"
-        return neighborhood or city or address.get('county')
-    except (requests.RequestException, ValueError, KeyError, TypeError):
-        return None

@@ -3,24 +3,32 @@ import psycopg2
 
 from app.config import Config
 from app.extensions import jwt, mail, cors
-from app.db import init_pool
+from app.db import init_pool, query_one
 from app.sockets import socketio
 from app.auth import auth_bp
 from app.profile import profile_bp
 from app.users import users_bp
 from app.notifications import notifications_bp
+from app.discover import discover_bp
+from app.messages import messages_bp
 from app.oauth import oauth_bp
+from app.dates import dates_bp
 
 
 def create_app(config_class=Config):
     app = Flask(__name__)
+    config_class.validate()
     app.config.from_object(config_class)
 
-    init_pool()
+    init_pool(app.config['DATABASE_URL'])
 
     jwt.init_app(app)
     mail.init_app(app)
-    cors.init_app(app, origins=app.config['CORS_ORIGINS'])
+    cors.init_app(
+        app,
+        origins=app.config['CORS_ORIGINS'],
+        supports_credentials=True,
+    )
 
     socketio.init_app(app, cors_allowed_origins=app.config['CORS_ORIGINS'], async_mode='eventlet')
 
@@ -28,7 +36,15 @@ def create_app(config_class=Config):
     app.register_blueprint(profile_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(discover_bp)
+    app.register_blueprint(messages_bp)
     app.register_blueprint(oauth_bp)
+    app.register_blueprint(dates_bp)
+
+    @app.get('/api/health')
+    def health():
+        query_one('SELECT 1 AS ready')
+        return jsonify({'status': 'ok'}), 200
 
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):

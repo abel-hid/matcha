@@ -1,153 +1,318 @@
-import os
 import secrets
+import time
+from urllib.parse import urlencode
+
+import psycopg2
 import requests
-from flask import Blueprint, request, redirect, session
+from flask import Blueprint, current_app, jsonify, redirect, request, session
 
 from app import models
+from app.auth import attach_session_cookies
+from app.validation import normalize_email
+
 
 oauth_bp = Blueprint('oauth', __name__, url_prefix='/api/auth/oauth')
 
-FRONTEND_URL = os.environ.get('FRONTEND_URL')
 
-FORTYTWO_CLIENT_ID = os.environ['FORTYTWO_CLIENT_ID']
-FORTYTWO_CLIENT_SECRET = os.environ['FORTYTWO_CLIENT_SECRET']
-FORTYTWO_REDIRECT_URI = os.environ['FORTYTWO_REDIRECT_URI']
-
-GOOGLE_CLIENT_ID = os.environ['GOOGLE_CLIENT_ID']
-GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
-GOOGLE_REDIRECT_URI = os.environ['GOOGLE_REDIRECT_URI']
+class OAuthProviderError(RuntimeError):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def finish_login(user):
-    models.update_user_fields(user['id'], {'is_online': True})
-    access, refresh = models.get_tokens_for_user(user['id'])
-    return redirect(f"{FRONTEND_URL}/oauth-callback?token={access}&refreshToken={refresh}")
+    frontend_url = current_app.config['FRONTEND_URL']
+    response = redirect(f'{frontend_url}/oauth-callback')
+    return attach_session_cookies(response, user)
 
 
 def redirect_with_error(reason):
-    return redirect(f"{FRONTEND_URL}/login?error={reason}")
+    frontend_url = current_app.config['FRONTEND_URL']
+    return redirect(f'{frontend_url}/login?error={reason}')
 
 
-# --------------------------------------------------------------------- 42
+def oauth_not_configured(provider):
+    return jsonify({'message': f'{provider} OAuth is not configured'}), 503
 
-@oauth_bp.route('/42/login')
-def fortytwo_login():
-    state = secrets.token_urlsafe(24)
-    session['oauth_state_42'] = state
-    params = (
-        f"?client_id={FORTYTWO_CLIENT_ID}"
-        f"&redirect_uri={FORTYTWO_REDIRECT_URI}"
-        f"&response_type=code&scope=public&state={state}"
+
+def provider_config(provider):
+    if provider == '42':
+        return {
+            'label': '42',
+            'client_id': current_app.config['FORTYTWO_CLIENT_ID'],
+            'client_secret': current_app.config['FORTYTWO_CLIENT_SECRET'],
+            'redirect_uri': current_app.config['FORTYTWO_REDIRECT_URI'],
+        }
+
+    if provider == 'google':
+        return {
+            'label': 'Google',
+            'client_id': current_app.config['GOOGLE_CLIENT_ID'],
+            'client_secret': current_app.config['GOOGLE_CLIENT_SECRET'],
+            'redirect_uri': current_app.config['GOOGLE_REDIRECT_URI'],
+        }
+
+    raise ValueError('Unsupported OAuth provider')
+
+
+def create_oauth_state(provider):
+    value = secrets.token_urlsafe(32)
+    session[f'oauth_state_{provider}'] = {
+        'value': value,
+        'createdAt': int(time.time()),
+    }
+    return value
+
+
+def validate_oauth_state(provider):
+    supplied_state = request.args.get('state', '')
+    stored_state = session.pop(f'oauth_state_{provider}', None)
+
+    if not isinstance(stored_state, dict):
+        return False
+
+    stored_value = stored_state.get('value')
+    created_at = stored_state.get('createdAt')
+    if not isinstance(stored_value, str) or not isinstance(created_at, int):
+        return False
+
+    if not supplied_state or not secrets.compare_digest(supplied_state, stored_value):
+        return False
+
+    age = int(time.time()) - created_at
+    return 0 <= age <= current_app.config['OAUTH_STATE_MAX_AGE_SECONDS']
+
+
+def request_provider_json(method, url, *, data=None, headers=None):
+    try:
+        response = requests.request(
+            method,
+            url,
+            data=data,
+            headers=headers,
+            timeout=current_app.config['OAUTH_TIMEOUT_SECONDS'],
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as error:
+        current_app.logger.warning('OAuth provider request failed: %s', error)
+        raise OAuthProviderError('provider_unavailable') from error
+    except ValueError as error:
+        current_app.logger.warning('OAuth provider returned invalid JSON')
+        raise OAuthProviderError('invalid_provider_response') from error
+
+    if not isinstance(payload, dict):
+        raise OAuthProviderError('invalid_provider_response')
+
+    return payload
+
+
+def exchange_access_token(provider, code):
+    config = provider_config(provider)
+
+    if provider == '42':
+        token_url = 'https://api.intra.42.fr/oauth/token'
+    else:
+        token_url = 'https://oauth2.googleapis.com/token'
+
+    payload = request_provider_json(
+        'POST',
+        token_url,
+        data={
+            'grant_type': 'authorization_code',
+            'client_id': config['client_id'],
+            'client_secret': config['client_secret'],
+            'code': code,
+            'redirect_uri': config['redirect_uri'],
+        },
     )
-    return redirect(f"https://api.intra.42.fr/oauth/authorize{params}")
+    access_token = payload.get('access_token')
+    if not isinstance(access_token, str) or not access_token:
+        raise OAuthProviderError('token_exchange_failed')
+
+    return access_token
 
 
-@oauth_bp.route('/42/callback')
-def fortytwo_callback():
-    if request.args.get('state') != session.pop('oauth_state_42', None):
-        return redirect_with_error('invalid_state')
+def fetch_provider_profile(provider, access_token):
+    if provider == '42':
+        return request_provider_json(
+            'GET',
+            'https://api.intra.42.fr/v2/me',
+            headers={'Authorization': f'Bearer {access_token}'},
+        )
 
-    code = request.args.get('code')
-    if not code:
-        return redirect_with_error('missing_code')
-
-    token_res = requests.post('https://api.intra.42.fr/oauth/token', data={
-        'grant_type': 'authorization_code',
-        'client_id': FORTYTWO_CLIENT_ID,
-        'client_secret': FORTYTWO_CLIENT_SECRET,
-        'code': code,
-        'redirect_uri': FORTYTWO_REDIRECT_URI,
-    })
-    if token_res.status_code != 200:
-        return redirect_with_error('token_exchange_failed')
-    access_token = token_res.json()['access_token']
-
-    me_res = requests.get(
-        'https://api.intra.42.fr/v2/me',
+    return request_provider_json(
+        'GET',
+        'https://openidconnect.googleapis.com/v1/userinfo',
         headers={'Authorization': f'Bearer {access_token}'},
     )
-    if me_res.status_code != 200:
-        return redirect_with_error('profile_fetch_failed')
-    profile = me_res.json()
-
-    return resolve_user(
-        provider='42',
-        oauth_id=str(profile['id']),
-        email=profile['email'],
-        first_name=profile.get('first_name', ''),
-        last_name=profile.get('last_name', ''),
-        preferred_username=profile.get('login'),
-    )
 
 
-# ------------------------------------------------------------------ google
-
-@oauth_bp.route('/google/login')
-def google_login():
-    state = secrets.token_urlsafe(24)
-    session['oauth_state_google'] = state
-    params = (
-        f"?client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
-        f"&response_type=code&scope=openid%20email%20profile&state={state}"
-        f"&access_type=online&prompt=select_account"
-    )
-    return redirect(f"https://accounts.google.com/o/oauth2/v2/auth{params}")
+def clean_name(value, fallback):
+    if isinstance(value, str):
+        cleaned = ' '.join(value.strip().split())[:50]
+        if cleaned:
+            return cleaned
+    return fallback
 
 
-@oauth_bp.route('/google/callback')
-def google_callback():
-    if request.args.get('state') != session.pop('oauth_state_google', None):
-        return redirect_with_error('invalid_state')
+def normalize_provider_profile(provider, profile):
+    if provider == '42':
+        oauth_id = profile.get('id')
+        raw_email = profile.get('email')
+        preferred_username = profile.get('login')
+        first_name = profile.get('first_name')
+        last_name = profile.get('last_name')
+    else:
+        if profile.get('email_verified') is not True:
+            raise OAuthProviderError('email_not_verified')
 
-    code = request.args.get('code')
-    if not code:
-        return redirect_with_error('missing_code')
+        oauth_id = profile.get('sub')
+        raw_email = profile.get('email')
+        preferred_username = (
+            raw_email.split('@', 1)[0]
+            if isinstance(raw_email, str)
+            else None
+        )
+        first_name = profile.get('given_name')
+        last_name = profile.get('family_name')
 
-    token_res = requests.post('https://oauth2.googleapis.com/token', data={
-        'grant_type': 'authorization_code',
-        'client_id': GOOGLE_CLIENT_ID,
-        'client_secret': GOOGLE_CLIENT_SECRET,
-        'code': code,
-        'redirect_uri': GOOGLE_REDIRECT_URI,
-    })
-    if token_res.status_code != 200:
-        return redirect_with_error('token_exchange_failed')
-    access_token = token_res.json()['access_token']
+    oauth_id = str(oauth_id).strip() if oauth_id is not None else ''
+    if not oauth_id or len(oauth_id) > 255:
+        raise OAuthProviderError('invalid_provider_profile')
 
-    me_res = requests.get(
-        'https://www.googleapis.com/oauth2/v3/userinfo',
-        headers={'Authorization': f'Bearer {access_token}'},
-    )
-    if me_res.status_code != 200:
-        return redirect_with_error('profile_fetch_failed')
-    profile = me_res.json()
+    email, email_error = normalize_email(raw_email)
+    if email_error:
+        raise OAuthProviderError('invalid_provider_profile')
 
-    if not profile.get('email_verified', False):
-        return redirect_with_error('email_not_verified')
+    username_seed = preferred_username if isinstance(preferred_username, str) else ''
+    username_seed = username_seed.strip() or email.split('@', 1)[0]
 
-    return resolve_user(
-        provider='google',
-        oauth_id=profile['sub'],
-        email=profile['email'],
-        first_name=profile.get('given_name', ''),
-        last_name=profile.get('family_name', ''),
-        preferred_username=profile.get('email', '').split('@')[0],
-    )
+    return {
+        'provider': provider,
+        'oauth_id': oauth_id,
+        'email': email,
+        'first_name': clean_name(first_name, 'OAuth'),
+        'last_name': clean_name(last_name, 'User'),
+        'preferred_username': username_seed,
+    }
 
 
-# ------------------------------------------------------------- resolve user
-
-def resolve_user(provider, oauth_id, email, first_name, last_name, preferred_username):
+def resolve_user(
+    provider,
+    oauth_id,
+    email,
+    first_name,
+    last_name,
+    preferred_username,
+):
     user = models.get_user_by_oauth(provider, oauth_id)
     if user:
         return finish_login(user)
 
     existing = models.get_user_by_email(email)
     if existing:
-        models.link_oauth_to_user(existing['id'], provider, oauth_id)
+        try:
+            models.link_oauth_to_user(
+                existing['id'],
+                provider,
+                oauth_id,
+                email,
+            )
+        except models.OAuthIdentityConflictError:
+            return redirect_with_error('oauth_identity_conflict')
         return finish_login(models.get_user_by_id(existing['id']))
 
-    username = models.generate_unique_username(preferred_username or email.split('@')[0])
-    user = models.create_oauth_user(username, email, first_name, last_name, provider, oauth_id)
+    username = models.generate_unique_username(preferred_username)
+    try:
+        user = models.create_oauth_user(
+            username,
+            email,
+            first_name,
+            last_name,
+            provider,
+            oauth_id,
+        )
+    except (psycopg2.errors.UniqueViolation, models.OAuthIdentityConflictError):
+        return redirect_with_error('oauth_identity_conflict')
+
     return finish_login(user)
+
+
+def complete_callback(provider):
+    config = provider_config(provider)
+    if not all([
+        config['client_id'],
+        config['client_secret'],
+        config['redirect_uri'],
+    ]):
+        return oauth_not_configured(config['label'])
+
+    if not validate_oauth_state(provider):
+        return redirect_with_error('invalid_state')
+
+    if request.args.get('error'):
+        return redirect_with_error('access_denied')
+
+    code = request.args.get('code', '').strip()
+    if not code:
+        return redirect_with_error('missing_code')
+
+    try:
+        access_token = exchange_access_token(provider, code)
+        raw_profile = fetch_provider_profile(provider, access_token)
+        profile = normalize_provider_profile(provider, raw_profile)
+    except OAuthProviderError as error:
+        return redirect_with_error(error.reason)
+
+    return resolve_user(**profile)
+
+
+# --------------------------------------------------------------------- 42
+
+@oauth_bp.route('/42/login')
+def fortytwo_login():
+    config = provider_config('42')
+    if not config['client_id'] or not config['redirect_uri']:
+        return oauth_not_configured(config['label'])
+
+    state = create_oauth_state('42')
+    query = urlencode({
+        'client_id': config['client_id'],
+        'redirect_uri': config['redirect_uri'],
+        'response_type': 'code',
+        'scope': 'public',
+        'state': state,
+    })
+    return redirect(f'https://api.intra.42.fr/oauth/authorize?{query}')
+
+
+@oauth_bp.route('/42/callback')
+def fortytwo_callback():
+    return complete_callback('42')
+
+
+# ------------------------------------------------------------------ google
+
+@oauth_bp.route('/google/login')
+def google_login():
+    config = provider_config('google')
+    if not config['client_id'] or not config['redirect_uri']:
+        return oauth_not_configured(config['label'])
+
+    state = create_oauth_state('google')
+    query = urlencode({
+        'client_id': config['client_id'],
+        'redirect_uri': config['redirect_uri'],
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': state,
+        'access_type': 'online',
+        'prompt': 'select_account',
+    })
+    return redirect(f'https://accounts.google.com/o/oauth2/v2/auth?{query}')
+
+
+@oauth_bp.route('/google/callback')
+def google_callback():
+    return complete_callback('google')

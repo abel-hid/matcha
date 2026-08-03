@@ -1,92 +1,91 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { authService } from '@/app/services/api';
+import {
+  authService,
+  clearAuthenticationCookieHints,
+  hasAuthenticationCookieHint,
+} from '@/app/services/api';
 import { User } from '@/app/types';
 import Cookies from 'js-cookie';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  signup: (userData: any) => Promise<void>;
-  logout: () => void;
-  setTokens: (token: string, refreshToken: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
+  signup: (userData: unknown) => Promise<void>;
+  logout: () => Promise<void>;
+  completeOAuthLogin: () => Promise<User>;
+  updateUser: (user: User) => void;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const COOKIE_OPTS = {
-  expires: 7,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
-};
-
-function clearAuthCookies() {
-  Cookies.remove('token');
-  Cookies.remove('refreshToken');
-  Cookies.remove('user');
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = Cookies.get('token');
+    Cookies.remove('token');
+    Cookies.remove('refreshToken');
+    Cookies.remove('user');
 
-    if (!token) {
+    if (!hasAuthenticationCookieHint()) {
       setLoading(false);
       return;
     }
 
-    authService.getCurrentUser()
+    authService.bootstrap()
       .then((data) => {
-        console.log('Fetched user data:', data);
-        setUser(data.user);
-        setLoading(false);
-      })
-      .catch((error) => {
-        if (error.response?.status === 401 || error.response?.status === 422) {
-          clearAuthCookies();
+        setUser(data.authenticated ? data.user : null);
+
+        if (!data.authenticated) {
+          clearAuthenticationCookieHints();
         }
+      })
+      .catch(() => {
+        clearAuthenticationCookieHints();
         setUser(null);
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await authService.login(username, password);
-    Cookies.set('token', data.token, COOKIE_OPTS);
-    Cookies.set('refreshToken', data.refreshToken, COOKIE_OPTS);
-    Cookies.set('user', JSON.stringify(data.user), COOKIE_OPTS);
     setUser(data.user);
+    return data.user as User;
   }, []);
 
-  const signup = useCallback(async (userData: any) => {
-    const data = await authService.signup(userData);
-    return data;
+  const signup = useCallback(async (userData: unknown) => {
+    await authService.signup(userData);
   }, []);
 
-  const setTokens = useCallback(async (token: string, refreshToken: string) => {
-    Cookies.set('token', token, COOKIE_OPTS);
-    Cookies.set('refreshToken', refreshToken, COOKIE_OPTS);
+  const completeOAuthLogin = useCallback(async () => {
+    const data = await authService.bootstrap();
 
-    try {
-      const data = await authService.getCurrentUser();
-      Cookies.set('user', JSON.stringify(data.user), COOKIE_OPTS);
-      setUser(data.user);
-    } catch (error) {
-      clearAuthCookies();
-      setUser(null);
-      throw error;
+    if (!data.authenticated || !data.user) {
+      throw new Error('OAuth session could not be established');
     }
+
+    setUser(data.user);
+    return data.user;
   }, []);
 
-  const logout = useCallback(() => {
-    authService.logout();
-    clearAuthCookies();
+  const updateUser = useCallback((updatedUser: User) => {
+    setUser(updatedUser);
+  }, []);
+
+  const logout = useCallback(async () => {
+    const session = await authService.bootstrap();
+
+    if (session.authenticated) {
+      await authService.logout();
+    }
+
+    clearAuthenticationCookieHints();
     setUser(null);
   }, []);
 
@@ -97,7 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       signup,
       logout,
-      setTokens,
+      completeOAuthLogin,
+      updateUser,
       isAuthenticated: !!user,
     }}>
       {children}
