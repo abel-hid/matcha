@@ -1,5 +1,7 @@
+"""Domain data access and serialization using manually written PostgreSQL queries."""
 
-from datetime import date, datetime, timezone
+
+from datetime import date, timezone
 from uuid import uuid4
 import re
 
@@ -16,28 +18,34 @@ PROFILE_LOCK_NAMESPACE = 4242
 
 
 class InvalidTagIdsError(ValueError):
+    """Raised when a tag update contains an identifier outside the fixed catalogue."""
     pass
 
 
 class PhotoLimitError(ValueError):
+    """Raised when a user attempts to exceed the five-photo limit."""
     pass
 
 
 class LastPhotoError(ValueError):
+    """Raised when an operation would remove the final required profile photo."""
     pass
 
 
 class OAuthIdentityConflictError(ValueError):
+    """Raised when one provider identity would be linked to conflicting users."""
     pass
 
 
 # ---------------------------------------------------------------- passwords
 
 def hash_password(password):
+    """Hash a validated password with bcrypt before storage."""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def check_password(password, password_hash):
+    """Safely compare a password with a stored bcrypt hash."""
     if not isinstance(password, str) or not isinstance(password_hash, str):
         return False
 
@@ -48,6 +56,7 @@ def check_password(password, password_hash):
 
 
 def get_tokens_for_user(user, session_id):
+    """Create access and refresh JWTs bound to one revocable session."""
     claims = {
         'sid': session_id,
         'ver': user['token_version'],
@@ -80,18 +89,22 @@ def to_iso_utc(dt):
 # --------------------------------------------------------------------- users
 
 def get_user_by_id(user_id):
+    """Return one user row by primary key."""
     return query_one("SELECT * FROM users WHERE id = %s", (user_id,))
 
 
 def get_user_by_username(username):
+    """Return one user row by unique username."""
     return query_one("SELECT * FROM users WHERE username = %s", (username,))
 
 
 def get_user_by_email(email):
+    """Return one user row by normalized email address."""
     return query_one("SELECT * FROM users WHERE email = %s", (email,))
 
 
 def create_user(username, email, password, first_name, last_name):
+    """Insert a local account with a bcrypt password hash."""
     return execute(
         """
         INSERT INTO users (username, email, password_hash, first_name, last_name)
@@ -112,6 +125,7 @@ _UPDATABLE_USER_FIELDS = {
 
 
 def update_user_fields(user_id, fields: dict):
+    """Update only the explicit allow-list of editable user columns."""
     fields = {k: v for k, v in fields.items() if k in _UPDATABLE_USER_FIELDS}
     if not fields:
         return
@@ -121,12 +135,14 @@ def update_user_fields(user_id, fields: dict):
 
 
 def delete_user(user_id):
+    """Remove or invalidate user safely."""
     execute("DELETE FROM users WHERE id = %s", (user_id,))
 
 
 # ------------------------------------------------------------------- sessions
 
 def create_session(user_id, expires_at):
+    """Create one revocable server-side authentication session."""
     session_id = str(uuid4())
     execute(
         """
@@ -139,6 +155,7 @@ def create_session(user_id, expires_at):
 
 
 def is_session_active(session_id, user_id, token_version):
+    """Return whether session active is true."""
     if not session_id or user_id is None or token_version is None:
         return False
 
@@ -158,6 +175,7 @@ def is_session_active(session_id, user_id, token_version):
 
 
 def touch_session(session_id):
+    """Record that an active authentication session was used."""
     execute(
         """
         UPDATE auth_sessions
@@ -169,6 +187,7 @@ def touch_session(session_id):
 
 
 def revoke_session(session_id):
+    """Remove or invalidate session safely."""
     if not session_id:
         return
 
@@ -182,18 +201,9 @@ def revoke_session(session_id):
     )
 
 
-def revoke_all_user_sessions(user_id):
-    execute(
-        """
-        UPDATE auth_sessions
-        SET revoked_at = COALESCE(revoked_at, now())
-        WHERE user_id = %s
-        """,
-        (user_id,),
-    )
-
 
 def reset_password_and_revoke_sessions(user_id, password, token_version):
+    """Replace the password, increment token state, and revoke all sessions atomically."""
     with get_conn() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -219,10 +229,12 @@ def reset_password_and_revoke_sessions(user_id, password, token_version):
 # ---------------------------------------------------------------------- tags
 
 def get_all_tags():
+    """Return the fixed reusable interest catalogue."""
     return query_all("SELECT * FROM tags ORDER BY name")
 
 
 def get_tags_for_user(user_id):
+    """Return a user’s selected reusable interests in display order."""
     return query_all(
         """
         SELECT t.* FROM tags t
@@ -235,6 +247,7 @@ def get_tags_for_user(user_id):
 
 
 def set_user_tags(user_id, tag_ids):
+    """Replace a user's reusable tags atomically after validating every identifier."""
     unique_tag_ids = list(dict.fromkeys(tag_ids))
 
     with get_conn() as conn:
@@ -259,6 +272,7 @@ def set_user_tags(user_id, tag_ids):
 # -------------------------------------------------------------------- photos
 
 def get_photos_for_user(user_id):
+    """Return a user’s photos with the primary image first."""
     return query_all(
         "SELECT * FROM photos WHERE user_id = %s ORDER BY is_primary DESC, position, id",
         (user_id,),
@@ -266,15 +280,18 @@ def get_photos_for_user(user_id):
 
 
 def count_photos(user_id):
+    """Return the current photos count."""
     row = query_one("SELECT COUNT(*) AS c FROM photos WHERE user_id = %s", (user_id,))
     return row['c'] if row else 0
 
 
 def get_primary_photo(user_id):
+    """Return the single primary photo for a user, when present."""
     return query_one("SELECT * FROM photos WHERE user_id = %s AND is_primary = true", (user_id,))
 
 
 def add_photo(user_id, filename):
+    """Insert a photo under a per-user lock while enforcing the five-photo limit."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -312,14 +329,9 @@ def add_photo(user_id, filename):
             return dict(cursor.fetchone())
 
 
-def get_photo(photo_id, user_id):
-    return query_one(
-        "SELECT * FROM photos WHERE id = %s AND user_id = %s",
-        (photo_id, user_id),
-    )
-
 
 def replace_photo_filename(user_id, photo_id, filename):
+    """Swap an owned photo filename while returning the previous file for cleanup."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -353,6 +365,7 @@ def replace_photo_filename(user_id, photo_id, filename):
 
 
 def delete_photo_and_promote(user_id, photo_id):
+    """Delete a photo atomically and promote a replacement primary image when needed."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -422,6 +435,7 @@ def delete_photo_and_promote(user_id, photo_id):
 
 
 def set_primary_photo(photo_id, user_id):
+    """Set an owned image as the single primary profile photo."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -465,6 +479,7 @@ def set_primary_photo(photo_id, user_id):
 # ---------------------------------------------------------- likes/views/blocks
 
 def has_liked(liker_id, liked_id):
+    """Return whether liked is true."""
     return query_one(
         "SELECT 1 FROM user_likes WHERE liker_id = %s AND liked_id = %s",
         (liker_id, liked_id),
@@ -472,10 +487,12 @@ def has_liked(liker_id, liked_id):
 
 
 def is_connected(user_a_id, user_b_id):
+    """Return whether connected is true."""
     return has_liked(user_a_id, user_b_id) and has_liked(user_b_id, user_a_id)
 
 
 def like_user(liker_id, liked_id):
+    """Insert one directional like and clear prior notification suppression."""
     inserted = execute(
         """
         INSERT INTO user_likes (liker_id, liked_id)
@@ -494,6 +511,7 @@ def like_user(liker_id, liked_id):
 
 
 def unlike_user(liker_id, liked_id):
+    """Remove one directional like and suppress future notifications after disconnect."""
     was_connected = is_connected(liker_id, liked_id)
     deleted = execute(
         """
@@ -514,6 +532,7 @@ def unlike_user(liker_id, liked_id):
 
 
 def get_likers(user_id):
+    """Return visible users who have liked the account."""
     return query_all(
         """
         SELECT u.*, l.created_at AS liked_at
@@ -532,6 +551,7 @@ def get_likers(user_id):
 
 
 def get_outgoing_pending_likes(user_id):
+    """Return outgoing likes that have not been reciprocated."""
     return query_all(
         """
         SELECT u.*, mine.created_at AS liked_at
@@ -556,6 +576,7 @@ def get_outgoing_pending_likes(user_id):
 
 
 def get_incoming_pending_likes(user_id):
+    """Return incoming likes that the user has not reciprocated."""
     return query_all(
         """
         SELECT u.*, incoming.created_at AS liked_at
@@ -580,6 +601,7 @@ def get_incoming_pending_likes(user_id):
 
 
 def get_matches(user_id):
+    """Return visible users with reciprocal likes."""
     return query_all(
         """
         SELECT
@@ -618,6 +640,7 @@ def set_user_online(user_id, is_online):
 
 
 def reset_online_users():
+    """Clear stale online flags left by a previous backend process."""
     execute(
         """
         UPDATE users
@@ -629,6 +652,7 @@ def reset_online_users():
 
 
 def is_blocked_either_way(user_a_id, user_b_id):
+    """Return whether blocked either way is true."""
     return query_one(
         """
         SELECT 1 FROM user_blocks
@@ -679,6 +703,7 @@ def block_user(blocker_id, blocked_id):
 
 
 def unblock_user(blocker_id, blocked_id):
+    """Delete one directional block owned by the current user."""
     return execute(
         """
         DELETE FROM user_blocks
@@ -691,6 +716,7 @@ def unblock_user(blocker_id, blocked_id):
 
 
 def get_blocked_users(blocker_id):
+    """Return profiles blocked by the current user."""
     return query_all(
         """
         SELECT u.*, b.created_at AS blocked_at
@@ -704,6 +730,7 @@ def get_blocked_users(blocker_id):
 
 
 def suppress_notifications_from(user_id, suppressed_user_id):
+    """Suppress future notifications from a disconnected user."""
     execute(
         """
         INSERT INTO notification_suppressions (user_id, suppressed_user_id)
@@ -715,6 +742,7 @@ def suppress_notifications_from(user_id, suppressed_user_id):
 
 
 def clear_notification_suppression(user_id, suppressed_user_id):
+    """Remove or invalidate notification suppression safely."""
     execute(
         """
         DELETE FROM notification_suppressions
@@ -725,6 +753,7 @@ def clear_notification_suppression(user_id, suppressed_user_id):
 
 
 def notifications_are_suppressed(user_id, from_user_id):
+    """Return whether notifications from one user are currently suppressed."""
     if from_user_id is None:
         return False
 
@@ -753,6 +782,7 @@ def record_view(viewer_id, viewed_id, visit_id):
 
 
 def get_viewers(user_id):
+    """Return profile visit history visible to the account owner."""
     return query_all(
         """
         SELECT u.*, v.id AS view_id, v.viewed_at
@@ -772,6 +802,7 @@ def get_viewers(user_id):
 # -------------------------------------------------------- fame rating / etc.
 
 def calculate_age(birth_date):
+    """Calculate a current age from a database date value."""
     if not birth_date:
         return None
 
@@ -784,6 +815,7 @@ def calculate_age(birth_date):
 
 
 def missing_profile_fields(user, tags, photos):
+    """Return every mandatory field still preventing profile completion."""
     missing = []
 
     if not str(user.get('first_name') or '').strip():
@@ -816,10 +848,12 @@ def missing_profile_fields(user, tags, photos):
 
 
 def is_profile_complete(user, tags, photos):
+    """Return whether all mandatory profile fields are present."""
     return len(missing_profile_fields(user, tags, photos)) == 0
 
 
 def is_user_profile_complete(user_id):
+    """Load profile data and evaluate completion for one user."""
     user = get_user_by_id(user_id)
     if not user:
         return False
@@ -832,6 +866,7 @@ def is_user_profile_complete(user_id):
 
 
 def profile_completion_points(user, tags, photos_count):
+    """Calculate the documented profile-completion component of fame rating."""
     points = 0
     if user['birth_date']:
         points += 1
@@ -851,6 +886,7 @@ def profile_completion_points(user, tags, photos_count):
 
 
 def calculate_fame_rating(user_id):
+    """Calculate the documented, bounded fame score from likes, views, and completion."""
     likes = query_one(
         "SELECT COUNT(*) AS c FROM user_likes WHERE liked_id = %s",
         (user_id,),
@@ -870,6 +906,7 @@ def calculate_fame_rating(user_id):
 
 
 def update_fame_rating(user_id):
+    """Recalculate and persist the bounded fame rating."""
     rating = calculate_fame_rating(user_id)
     execute("UPDATE users SET fame_rating = %s WHERE id = %s", (rating, user_id))
     return rating
@@ -878,6 +915,7 @@ def update_fame_rating(user_id):
 # --------------------------------------------------------------- discovery
 
 def discover_users(current_user_id, filters):
+    """Execute the compatibility, privacy, filter, ranking, and pagination SQL."""
     order_by = {
         'recommended': (
             'same_area DESC, distance_km ASC, '
@@ -1076,6 +1114,7 @@ def discover_users(current_user_id, filters):
 
 
 def discovery_user_to_dict(user):
+    """Serialize discovery user for the API response."""
     return {
         'id': user['id'],
         'username': user['username'],
@@ -1104,10 +1143,12 @@ def discovery_user_to_dict(user):
 
 
 def approximate_coordinate(value):
+    """Round a coordinate before exposing it on the public map."""
     return round(float(value), 2)
 
 
 def approximate_map_location(user):
+    """Serialize a privacy-rounded public map location."""
     return {
         'name': user['location_name'],
         'latitude': approximate_coordinate(user['latitude']),
@@ -1116,6 +1157,7 @@ def approximate_map_location(user):
 
 
 def map_user_to_dict(user):
+    """Serialize map user for the API response."""
     data = discovery_user_to_dict(user)
     data['location'] = {
         'name': user['location_name'],
@@ -1128,6 +1170,7 @@ def map_user_to_dict(user):
 # --------------------------------------------------------------- serializers
 
 def photo_to_dict(photo):
+    """Serialize photo for the API response."""
     return {
         'id': photo['id'],
         'url': f"/uploads/{photo['filename']}",
@@ -1137,6 +1180,7 @@ def photo_to_dict(photo):
 
 
 def user_to_dict(user, include_private=False):
+    """Serialize a user while exposing private fields only to the account owner."""
     tags = get_tags_for_user(user['id'])
     photos = get_photos_for_user(user['id'])
     primary = get_primary_photo(user['id'])
@@ -1186,6 +1230,7 @@ def user_to_dict(user, include_private=False):
 
 
 def view_to_dict(view):
+    """Serialize view for the API response."""
     return {
         'id': view['view_id'],
         'viewedAt': to_iso_utc(view['viewed_at']),
@@ -1194,6 +1239,7 @@ def view_to_dict(view):
 
 
 def like_to_dict(liker):
+    """Serialize like for the API response."""
     return {
         'likedAt': to_iso_utc(liker['liked_at']),
         'user': user_to_dict(liker),
@@ -1201,6 +1247,7 @@ def like_to_dict(liker):
 
 
 def match_to_dict(match):
+    """Serialize match for the API response."""
     return {
         'matchedAt': to_iso_utc(match['matched_at']),
         'user': user_to_dict(match),
@@ -1208,6 +1255,7 @@ def match_to_dict(match):
 
 
 def blocked_user_to_dict(blocked_user):
+    """Serialize blocked user for the API response."""
     return {
         'blockedAt': to_iso_utc(blocked_user['blocked_at']),
         'user': user_to_dict(blocked_user),
@@ -1217,6 +1265,7 @@ def blocked_user_to_dict(blocked_user):
 # ------------------------------------------------------------------ messages
 
 def create_message(sender_id, receiver_id, content):
+    """Persist one message between authorized participants."""
     return execute(
         """
         INSERT INTO messages (sender_id, receiver_id, content)
@@ -1229,6 +1278,7 @@ def create_message(sender_id, receiver_id, content):
 
 
 def has_conversation_history(user_a_id, user_b_id):
+    """Return whether conversation history is true."""
     return query_one(
         """
         SELECT 1
@@ -1242,6 +1292,7 @@ def has_conversation_history(user_a_id, user_b_id):
 
 
 def get_chat_contacts(user_id):
+    """Return matches and historical conversations with unread state."""
     return query_all(
         """
         WITH viewer_profile AS (
@@ -1346,6 +1397,7 @@ def get_chat_contacts(user_id):
 
 
 def get_conversation(user_a_id, user_b_id, page=1, page_size=50):
+    """Return one authorized conversation in chronological pages."""
     count_row = query_one(
         """
         SELECT COUNT(*) AS total
@@ -1395,6 +1447,7 @@ def get_conversation(user_a_id, user_b_id, page=1, page_size=50):
 
 
 def mark_conversation_read(user_id, other_user_id):
+    """Mark incoming messages as read and emit delivery receipts."""
     updated_messages = query_all(
         """
         UPDATE messages
@@ -1411,6 +1464,7 @@ def mark_conversation_read(user_id, other_user_id):
 
 
 def count_unread_messages(user_id):
+    """Return the current unread messages count."""
     row = query_one(
         """
         SELECT COUNT(*) AS total
@@ -1435,6 +1489,7 @@ def count_unread_messages(user_id):
 
 
 def chat_user_to_dict(user):
+    """Serialize chat user for the API response."""
     filename = user.get('primary_filename')
     if filename is None:
         primary = get_primary_photo(user['id'])
@@ -1452,6 +1507,7 @@ def chat_user_to_dict(user):
 
 
 def chat_contact_to_dict(contact):
+    """Serialize chat contact for the API response."""
     last_message = None
     if contact.get('last_message_id') is not None:
         last_message = {
@@ -1472,6 +1528,7 @@ def chat_contact_to_dict(contact):
 
 
 def message_to_dict(message):
+    """Serialize message for the API response."""
     return {
         'id': message['id'],
         'senderId': message['sender_id'],
@@ -1485,6 +1542,7 @@ def message_to_dict(message):
 # -------------------------------------------------------------------- reports
 
 def create_report(reporter_id, reported_user_id, reason='fake_account'):
+    """Insert one idempotent fake-account report for a user pair."""
     return execute(
         """
         INSERT INTO reports (reporter_id, reported_user_id, reason)
@@ -1498,6 +1556,7 @@ def create_report(reporter_id, reported_user_id, reason='fake_account'):
 
 
 def has_reported(reporter_id, reported_user_id):
+    """Return whether reported is true."""
     return query_one(
         "SELECT 1 FROM reports WHERE reporter_id = %s AND reported_user_id = %s",
         (reporter_id, reported_user_id),
@@ -1507,6 +1566,7 @@ def has_reported(reporter_id, reported_user_id):
 # --------------------------------------------------------------- notifications
 
 def create_notification(user_id, type_, from_user_id=None, content=None):
+    """Persist and emit an allowed notification after block and suppression checks."""
     if not is_user_profile_complete(user_id):
         return None
 
@@ -1533,6 +1593,7 @@ def create_notification(user_id, type_, from_user_id=None, content=None):
 
 
 def notification_to_dict(notif):
+    """Serialize notification for the API response."""
     from_user = get_user_by_id(notif['from_user_id']) if notif['from_user_id'] else None
     return {
         'id': notif['id'],
@@ -1545,6 +1606,7 @@ def notification_to_dict(notif):
 
 
 def get_notifications_for_user(user_id, limit=50):
+    """Return recent notifications in newest-first order."""
     return query_all(
         "SELECT * FROM notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
         (user_id, limit),
@@ -1552,6 +1614,7 @@ def get_notifications_for_user(user_id, limit=50):
 
 
 def count_unread_notifications(user_id):
+    """Return the current unread notifications count."""
     row = query_one(
         "SELECT COUNT(*) AS c FROM notifications WHERE user_id = %s AND is_read = false",
         (user_id,),
@@ -1560,6 +1623,7 @@ def count_unread_notifications(user_id):
 
 
 def mark_notification_read(notification_id, user_id):
+    """Mark one notification as read only for its owner."""
     execute(
         "UPDATE notifications SET is_read = true WHERE id = %s AND user_id = %s",
         (notification_id, user_id),
@@ -1567,6 +1631,7 @@ def mark_notification_read(notification_id, user_id):
 
 
 def mark_all_notifications_read(user_id):
+    """Mark every notification for one user as read."""
     execute(
         "UPDATE notifications SET is_read = true WHERE user_id = %s AND is_read = false",
         (user_id,),
@@ -1575,13 +1640,8 @@ def mark_all_notifications_read(user_id):
 
 # ---------------------------------------------------------------- date events
 
-def create_date_event(
-    proposer_id,
-    recipient_id,
-    scheduled_for,
-    location,
-    note=None,
-):
+def create_date_event(proposer_id, recipient_id, scheduled_for, location, note=None):
+    """Persist a date proposal and return its database row."""
     return execute(
         """
         INSERT INTO date_events (
@@ -1606,6 +1666,7 @@ def create_date_event(
 
 
 def get_date_event(event_id):
+    """Return one date proposal by identifier."""
     return query_one(
         "SELECT * FROM date_events WHERE id = %s",
         (event_id,),
@@ -1613,6 +1674,7 @@ def get_date_event(event_id):
 
 
 def get_date_events_for_user(user_id):
+    """Return visible date proposals involving one user."""
     return query_all(
         """
         SELECT *
@@ -1636,6 +1698,7 @@ def get_date_events_for_user(user_id):
 
 
 def respond_to_date_event(event_id, recipient_id, status):
+    """Accept or decline a pending proposal as its recipient."""
     return execute(
         """
         UPDATE date_events
@@ -1653,6 +1716,7 @@ def respond_to_date_event(event_id, recipient_id, status):
 
 
 def cancel_date_event(event_id, user_id):
+    """Cancel a pending or accepted future proposal as a participant."""
     return execute(
         """
         UPDATE date_events
@@ -1670,6 +1734,7 @@ def cancel_date_event(event_id, user_id):
 
 
 def date_event_user_to_dict(user):
+    """Serialize date event user for the API response."""
     if not user:
         return None
 
@@ -1688,6 +1753,7 @@ def date_event_user_to_dict(user):
 
 
 def date_event_to_dict(event):
+    """Serialize a date proposal with participant-relative action permissions."""
     proposer = get_user_by_id(event['proposer_id'])
     recipient = get_user_by_id(event['recipient_id'])
     return {
@@ -1705,6 +1771,7 @@ def date_event_to_dict(event):
 # --------------------------------------------------------------- authentication 42 google
 
 def get_user_by_oauth(provider, oauth_id):
+    """Return the local user linked to one provider identity."""
     return query_one(
         """
         SELECT users.*
@@ -1717,14 +1784,8 @@ def get_user_by_oauth(provider, oauth_id):
     )
 
 
-def create_oauth_user(
-    username,
-    email,
-    first_name,
-    last_name,
-    provider,
-    oauth_id,
-):
+def create_oauth_user(username, email, first_name, last_name, provider, oauth_id):
+    """Create a verified OAuth user and provider identity atomically."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -1759,6 +1820,7 @@ def create_oauth_user(
 
 
 def link_oauth_to_user(user_id, provider, oauth_id, provider_email):
+    """Link a provider identity while preventing cross-account identity conflicts."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -1819,20 +1881,9 @@ def link_oauth_to_user(user_id, provider, oauth_id, provider_email):
             )
 
 
-def get_oauth_providers_for_user(user_id):
-    rows = query_all(
-        """
-        SELECT provider
-        FROM oauth_identities
-        WHERE user_id = %s
-        ORDER BY provider
-        """,
-        (user_id,),
-    )
-    return [row['provider'] for row in rows]
-
 
 def generate_unique_username(base):
+    """Create a normalized available username for an OAuth account."""
     normalized = re.sub(r'[^a-z0-9_]+', '_', base.lower())
     normalized = re.sub(r'_+', '_', normalized).strip('_')
     base = normalized[:40] or 'user'

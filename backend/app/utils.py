@@ -1,3 +1,5 @@
+"""Token, email, image, distance, and geocoding utilities."""
+
 import os
 import secrets
 import warnings
@@ -8,12 +10,10 @@ from flask import current_app, has_app_context
 from flask_mail import Message
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from PIL import Image, ImageOps, UnidentifiedImageError
-from geopy.distance import geodesic
 
 from app.extensions import mail
 from app.config import Config
 
-# Generate verification token
 def generate_verification_token(user):
     """Generate a one-time email verification token for the current address."""
     serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
@@ -26,7 +26,6 @@ def generate_verification_token(user):
         salt='email-verification',
     )
 
-# Verify token
 def verify_verification_token(token, expiration=3600):
     """Return (payload, reason) for an email verification token."""
     serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
@@ -46,9 +45,8 @@ def verify_verification_token(token, expiration=3600):
     except BadSignature:
         return None, 'invalid'
 
-# Generate password reset token
 def generate_reset_token(email, token_version):
-    """Generate a single-use password reset token, tied to the user's current token_version"""
+    """Generate a reset token tied to the current password-session version."""
     serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
     return serializer.dumps(
         {
@@ -59,7 +57,6 @@ def generate_reset_token(email, token_version):
         salt='password-reset',
     )
 
-# Verify password reset token
 def verify_reset_token(token, expiration=3600):
     """
     Verify password reset token.
@@ -83,18 +80,16 @@ def verify_reset_token(token, expiration=3600):
     except BadSignature:
         return None, 'invalid'
 
-# Send email
 def send_email(subject, recipients, html_body, text_body=None):
-    """Send email"""
+    """Send one HTML email with an optional plain-text alternative."""
     msg = Message(subject, recipients=recipients)
     msg.html = html_body
     if text_body:
         msg.body = text_body
     mail.send(msg)
 
-# Send verification email
 def send_verification_email(user):
-    """Send email verification link. `user` is a dict from app.models."""
+    """Send a one-hour verification link for the user's current email."""
     token = generate_verification_token(user)
     verify_url = f"{current_app.config['FRONTEND_URL']}/verify?token={token}"
 
@@ -122,9 +117,8 @@ def send_verification_email(user):
         ),
     )
 
-# Send password reset email
 def send_password_reset_email(user):
-    """Send password reset link. `user` is a dict from app.models."""
+    """Send a one-hour reset link invalidated by any later password change."""
     token = generate_reset_token(user['email'], user['token_version'])
     reset_url = f"{current_app.config['FRONTEND_URL']}/reset-password?token={token}"
 
@@ -152,7 +146,6 @@ def send_password_reset_email(user):
         ),
     )
 
-# Save uploaded image
 def save_image(file):
     """Validate image content, remove metadata, and save a random server filename."""
     if not file or not file.filename:
@@ -246,24 +239,21 @@ def delete_saved_image(filename):
     except OSError:
         return False
 
-# Calculate distance between two locations
-def calculate_distance(lat1, lon1, lat2, lon2):
-    """Calculate distance between two points in kilometers."""
-    if any(value is None for value in (lat1, lon1, lat2, lon2)):
-        return float('inf')
-    return geodesic((lat1, lon1), (lat2, lon2)).kilometers
-
 class LocationServiceError(Exception):
+    """Signal that the external geocoding provider could not answer safely."""
+
     pass
 
 
 def location_config(name):
+    """Return the geocoding endpoint, identity, and timeout configuration."""
     if has_app_context():
         return current_app.config[name]
     return getattr(Config, name)
 
 
 def nominatim_get(path, params):
+    """Perform a controlled Nominatim request with the required user agent."""
     try:
         response = requests.get(
             f"{location_config('NOMINATIM_URL')}{path}",
@@ -283,6 +273,7 @@ def nominatim_get(path, params):
 
 
 def compact_location_name(result):
+    """Build a concise city or neighborhood label from geocoder data."""
     address = result.get('address') or {}
     local_name = (
         result.get('name')
@@ -312,6 +303,7 @@ def compact_location_name(result):
 
 
 def search_locations(location_name, limit=5):
+    """Return normalized manual-location suggestions from the geocoder."""
     data = nominatim_get('/search', {
         'q': location_name,
         'format': 'jsonv2',
@@ -349,6 +341,7 @@ def search_locations(location_name, limit=5):
 
 
 def reverse_geocode_location(latitude, longitude):
+    """Resolve coordinates to a readable approximate location label."""
     data = nominatim_get('/reverse', {
         'lat': latitude,
         'lon': longitude,
@@ -359,10 +352,3 @@ def reverse_geocode_location(latitude, longitude):
     if not isinstance(data, dict) or data.get('error'):
         return None
     return compact_location_name(data)
-
-
-# Check if two users are connected (mutual like)
-def are_connected(user1_id, user2_id):
-    """Check if two users have mutual likes"""
-    from app.models import has_liked
-    return has_liked(user1_id, user2_id) and has_liked(user2_id, user1_id)

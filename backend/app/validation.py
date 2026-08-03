@@ -1,3 +1,5 @@
+"""Central validation and normalization rules shared by API routes."""
+
 import re
 import unicodedata
 from datetime import date
@@ -24,6 +26,7 @@ _SPECIAL_PATTERN = re.compile(r'[!@#$%^&*(),.?":{}|<>]')
 
 
 def validate_username(value):
+    """Validate and normalize username."""
     if not isinstance(value, str):
         return None, 'Username must be a string'
 
@@ -39,6 +42,7 @@ def validate_username(value):
 
 
 def normalize_email(value):
+    """Normalize an email address and return a controlled validation error when invalid."""
     if not isinstance(value, str):
         return None, 'Email must be a string'
 
@@ -53,12 +57,8 @@ def normalize_email(value):
     return email, None
 
 
-def validate_email(value):
-    email, error = normalize_email(value)
-    return email is not None and error is None
-
-
 def validate_name(value, field_name):
+    """Validate and normalize name."""
     if not isinstance(value, str):
         return None, f'{field_name} must be a string'
 
@@ -74,6 +74,7 @@ def validate_name(value, field_name):
 
 
 def calculate_age_from_birth_date(birth_date, today=None):
+    """Calculate age from a date without timezone-dependent browser assumptions."""
     today = today or date.today()
 
     return (
@@ -84,6 +85,7 @@ def calculate_age_from_birth_date(birth_date, today=None):
 
 
 def validate_birth_date(value, required=False):
+    """Validate and normalize birth date."""
     if value is None or value == '':
         if required:
             return None, 'Birth date is required'
@@ -111,6 +113,7 @@ def validate_birth_date(value, required=False):
 
 
 def validate_gender(value, required=False):
+    """Validate and normalize gender."""
     if value is None or value == '':
         if required:
             return None, 'Gender is required'
@@ -123,6 +126,7 @@ def validate_gender(value, required=False):
 
 
 def validate_sexual_preferences(value):
+    """Validate and normalize sexual preferences."""
     if not isinstance(value, list):
         return None, 'Sexual preferences must be a list'
 
@@ -142,6 +146,7 @@ def validate_sexual_preferences(value):
 
 
 def validate_biography(value, required=False):
+    """Validate and normalize biography."""
     if value is None:
         if required:
             return None, 'Biography is required'
@@ -159,6 +164,7 @@ def validate_biography(value, required=False):
 
 
 def validate_location_name(value, required=False):
+    """Validate and normalize location name."""
     if value is None:
         if required:
             return None, 'locationName is required when gpsConsent is false'
@@ -178,6 +184,7 @@ def validate_location_name(value, required=False):
 
 
 def validate_coordinate(value, field_name, minimum, maximum):
+    """Validate and normalize coordinate."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None, f'{field_name} must be a number'
 
@@ -189,6 +196,7 @@ def validate_coordinate(value, field_name, minimum, maximum):
 
 
 def validate_password(password, account_values=None):
+    """Reject weak, common, personal, malformed, or oversized passwords."""
     if not isinstance(password, str):
         return False, 'Password must be a string'
     if len(password) < PASSWORD_MIN_LENGTH:
@@ -239,6 +247,7 @@ def validate_password(password, account_values=None):
 
 
 def validate_registration_data(data):
+    """Validate and normalize every registration field together."""
     if not isinstance(data, dict):
         return None, 'Request body must be a JSON object'
 
@@ -276,6 +285,7 @@ def validate_registration_data(data):
 
 
 def _normalize_word(value):
+    """Normalize text for case-insensitive password similarity checks."""
     normalized = unicodedata.normalize('NFKD', value).casefold()
     return ''.join(character for character in normalized if character.isalpha())
 

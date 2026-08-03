@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { usersService } from '@/app/services/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -18,6 +19,7 @@ interface BlockEntry {
   user: BlockedUser;
 }
 
+/** Render this application route and delegate its feature logic to the page component. */
 export default function BlockedUsersPage() {
   const [blocks, setBlocks] = useState<BlockEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,12 +29,13 @@ export default function BlockedUsersPage() {
   useEffect(() => {
     usersService.getBlockedUsers()
       .then((data) => setBlocks(data.blocks ?? []))
-      .catch((err: any) => {
-        setError(err.response?.data?.message || 'Failed to load blocked users.');
+      .catch((err: unknown) => {
+        setError(apiErrorMessage(err, 'Failed to load blocked users.'));
       })
       .finally(() => setLoading(false));
   }, []);
 
+  /** Remove a block and update the list only after the API confirms success. */
   const handleUnblock = async (userId: number) => {
     setBusyId(userId);
     setError('');
@@ -40,8 +43,8 @@ export default function BlockedUsersPage() {
     try {
       await usersService.unblock(userId);
       setBlocks((current) => current.filter((block) => block.user.id !== userId));
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to unblock this user.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to unblock this user.'));
     } finally {
       setBusyId(null);
     }

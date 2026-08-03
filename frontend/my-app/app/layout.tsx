@@ -1,25 +1,22 @@
 import type { Metadata } from 'next';
-import './globals.css';
+
 import { AuthProvider } from '@/app/context/AuthContext';
-import { Providers } from './test';
+import { Providers } from '@/app/providers';
+
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Matcha - Dating App',
-  description: 'Find your perfect match',
+  description: 'Discover compatible people, connect, chat, call, and plan dates.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+/** Wrap every route with authentication, notification, and audio-call state. */
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning={true}>
+      <body suppressHydrationWarning>
         <AuthProvider>
-          <Providers>
-          {children}
-          </Providers>
+          <Providers>{children}</Providers>
         </AuthProvider>
       </body>
     </html>

@@ -1,8 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import React, { PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { MapLocation, MapProfile } from '@/app/types';
+import {
+  PointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import type {
+  MapLocation,
+  MapProfile,
+} from '@/app/types';
 
 interface UserMapProps {
   currentUserLocation: MapLocation;
@@ -24,14 +34,20 @@ const MIN_ZOOM = 3;
 const MAX_ZOOM = 17;
 const MAX_MERCATOR_LATITUDE = 85.05112878;
 
+
+/** Keep a number inside the specified minimum and maximum values. */
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+
+/** Return the full Web Mercator world size for the selected zoom level. */
 function worldSize(zoom: number) {
   return TILE_SIZE * (2 ** zoom);
 }
 
+
+/** Project geographic coordinates into Web Mercator pixel coordinates. */
 function project(latitude: number, longitude: number, zoom: number): Point {
   const size = worldSize(zoom);
   const safeLatitude = clamp(
@@ -50,6 +66,8 @@ function project(latitude: number, longitude: number, zoom: number): Point {
   };
 }
 
+
+/** Convert Web Mercator pixel coordinates back to latitude and longitude. */
 function unproject(point: Point, zoom: number): MapLocation {
   const size = worldSize(zoom);
   const longitude = (point.x / size) * 360 - 180;
@@ -61,15 +79,23 @@ function unproject(point: Point, zoom: number): MapLocation {
 
   return {
     name: '',
-    latitude: clamp(latitude, -MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE),
+    latitude: clamp(
+      latitude,
+      -MAX_MERCATOR_LATITUDE,
+      MAX_MERCATOR_LATITUDE,
+    ),
     longitude: ((longitude + 540) % 360) - 180,
   };
 }
 
+
+/** Build the accessible label shown for a map profile marker. */
 function markerTitle(profile: MapProfile) {
   return `${profile.firstName} ${profile.lastName}, ${profile.age}`;
 }
 
+
+/** Render an interactive map with panning, zooming, markers, and profile popups. */
 export default function UserMap({
   currentUserLocation,
   profiles,
@@ -82,7 +108,11 @@ export default function UserMap({
     startY: number;
     center: Point;
   } | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 560 });
+
+  const [dimensions, setDimensions] = useState({
+    width: 800,
+    height: 560,
+  });
   const [center, setCenter] = useState({
     latitude: currentUserLocation.latitude,
     longitude: currentUserLocation.longitude,
@@ -91,7 +121,10 @@ export default function UserMap({
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   useEffect(() => {
-    const handleOutsidePointerDown = (event: globalThis.PointerEvent) => {
+    /** Close the profile popup when the user clicks outside the map. */
+    const handleOutsidePointerDown = (
+      event: globalThis.PointerEvent,
+    ) => {
       const mapElement = containerRef.current;
 
       if (
@@ -103,15 +136,22 @@ export default function UserMap({
       }
     };
 
-    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    document.addEventListener(
+      'pointerdown',
+      handleOutsidePointerDown,
+    );
 
     return () => {
-      document.removeEventListener('pointerdown', handleOutsidePointerDown);
+      document.removeEventListener(
+        'pointerdown',
+        handleOutsidePointerDown,
+      );
     };
   }, []);
 
   useEffect(() => {
     const element = containerRef.current;
+
     if (!element) {
       return;
     }
@@ -122,8 +162,12 @@ export default function UserMap({
         height: Math.max(420, entry.contentRect.height),
       });
     });
+
     observer.observe(element);
-    return () => observer.disconnect();
+
+    return () => {
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -131,7 +175,12 @@ export default function UserMap({
       currentUserLocation,
       ...profiles.map((profile) => profile.location),
     ];
-    if (!locations.length || dimensions.width <= 0 || dimensions.height <= 0) {
+
+    if (
+      !locations.length
+      || dimensions.width <= 0
+      || dimensions.height <= 0
+    ) {
       return;
     }
 
@@ -141,54 +190,94 @@ export default function UserMap({
       longitude: currentUserLocation.longitude,
     };
 
-    for (let candidateZoom = MAX_ZOOM; candidateZoom >= MIN_ZOOM; candidateZoom -= 1) {
+    for (
+      let candidateZoom = MAX_ZOOM;
+      candidateZoom >= MIN_ZOOM;
+      candidateZoom -= 1
+    ) {
       const points = locations.map((location) => project(
         location.latitude,
         location.longitude,
         candidateZoom,
       ));
-      const minimumX = Math.min(...points.map((point) => point.x));
-      const maximumX = Math.max(...points.map((point) => point.x));
-      const minimumY = Math.min(...points.map((point) => point.y));
-      const maximumY = Math.max(...points.map((point) => point.y));
+
+      const minimumX = Math.min(
+        ...points.map((point) => point.x),
+      );
+      const maximumX = Math.max(
+        ...points.map((point) => point.x),
+      );
+      const minimumY = Math.min(
+        ...points.map((point) => point.y),
+      );
+      const maximumY = Math.max(
+        ...points.map((point) => point.y),
+      );
 
       if (
         maximumX - minimumX <= dimensions.width - 100
         && maximumY - minimumY <= dimensions.height - 120
       ) {
         selectedZoom = candidateZoom;
+
         const geographicCenter = unproject({
           x: (minimumX + maximumX) / 2,
           y: (minimumY + maximumY) / 2,
         }, candidateZoom);
+
         selectedCenter = {
           latitude: geographicCenter.latitude,
           longitude: geographicCenter.longitude,
         };
+
         break;
       }
     }
 
     setZoom(selectedZoom);
     setCenter(selectedCenter);
-  }, [currentUserLocation, dimensions.height, dimensions.width, profiles]);
+  }, [
+    currentUserLocation,
+    dimensions.height,
+    dimensions.width,
+    profiles,
+  ]);
 
   const centerPoint = useMemo(
-    () => project(center.latitude, center.longitude, zoom),
-    [center.latitude, center.longitude, zoom],
+    () => project(
+      center.latitude,
+      center.longitude,
+      zoom,
+    ),
+    [
+      center.latitude,
+      center.longitude,
+      zoom,
+    ],
   );
+
   const viewportLeft = centerPoint.x - dimensions.width / 2;
   const viewportTop = centerPoint.y - dimensions.height / 2;
   const tileCount = 2 ** zoom;
 
   const tiles = useMemo(() => {
-    const minimumTileX = Math.floor(viewportLeft / TILE_SIZE);
-    const maximumTileX = Math.floor((viewportLeft + dimensions.width) / TILE_SIZE);
-    const minimumTileY = Math.max(0, Math.floor(viewportTop / TILE_SIZE));
+    const minimumTileX = Math.floor(
+      viewportLeft / TILE_SIZE,
+    );
+    const maximumTileX = Math.floor(
+      (viewportLeft + dimensions.width) / TILE_SIZE,
+    );
+    const minimumTileY = Math.max(
+      0,
+      Math.floor(viewportTop / TILE_SIZE),
+    );
     const maximumTileY = Math.min(
       tileCount - 1,
-      Math.floor((viewportTop + dimensions.height) / TILE_SIZE),
+      Math.floor(
+        (viewportTop + dimensions.height) / TILE_SIZE,
+      ),
     );
+
     const result: {
       key: string;
       sourceX: number;
@@ -197,9 +286,20 @@ export default function UserMap({
       top: number;
     }[] = [];
 
-    for (let tileY = minimumTileY; tileY <= maximumTileY; tileY += 1) {
-      for (let tileX = minimumTileX; tileX <= maximumTileX; tileX += 1) {
-        const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
+    for (
+      let tileY = minimumTileY;
+      tileY <= maximumTileY;
+      tileY += 1
+    ) {
+      for (
+        let tileX = minimumTileX;
+        tileX <= maximumTileX;
+        tileX += 1
+      ) {
+        const wrappedX = (
+          (tileX % tileCount) + tileCount
+        ) % tileCount;
+
         result.push({
           key: `${zoom}-${tileX}-${tileY}`,
           sourceX: wrappedX,
@@ -209,22 +309,81 @@ export default function UserMap({
         });
       }
     }
-    return result;
-  }, [dimensions.height, dimensions.width, tileCount, viewportLeft, viewportTop, zoom]);
 
+    return result;
+  }, [
+    dimensions.height,
+    dimensions.width,
+    tileCount,
+    viewportLeft,
+    viewportTop,
+    zoom,
+  ]);
+
+  /** Project geographic coordinates into the visible map viewport. */
   const markerPosition = (location: MapLocation) => {
-    const point = project(location.latitude, location.longitude, zoom);
+    const point = project(
+      location.latitude,
+      location.longitude,
+      zoom,
+    );
+
     return {
       x: point.x - viewportLeft,
       y: point.y - viewportTop,
     };
   };
 
+  /** Clamp zoom changes to the map's supported zoom range. */
   const changeZoom = (nextZoom: number) => {
-    setZoom(clamp(nextZoom, MIN_ZOOM, MAX_ZOOM));
+    setZoom(clamp(
+      nextZoom,
+      MIN_ZOOM,
+      MAX_ZOOM,
+    ));
   };
 
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+  useEffect(() => {
+    const mapElement = containerRef.current;
+
+    if (!mapElement) {
+      return;
+    }
+
+    /**
+     * Use a native non-passive wheel listener because React wheel listeners
+     * may be passive and cannot reliably call preventDefault().
+     */
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+
+      setZoom((currentZoom) => clamp(
+        currentZoom + (event.deltaY < 0 ? 1 : -1),
+        MIN_ZOOM,
+        MAX_ZOOM,
+      ));
+    };
+
+    mapElement.addEventListener(
+      'wheel',
+      handleWheel,
+      {
+        passive: false,
+      },
+    );
+
+    return () => {
+      mapElement.removeEventListener(
+        'wheel',
+        handleWheel,
+      );
+    };
+  }, []);
+
+  /** Start map dragging or close the popup when the empty map is clicked. */
+  const handlePointerDown = (
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
     if (event.button !== 0) {
       return;
     }
@@ -233,7 +392,10 @@ export default function UserMap({
       setSelectedId(null);
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture(
+      event.pointerId,
+    );
+
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -242,29 +404,50 @@ export default function UserMap({
     };
   };
 
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+  /** Pan the map while an active pointer drag gesture is moving. */
+  const handlePointerMove = (
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) {
+
+    if (
+      !drag
+      || drag.pointerId !== event.pointerId
+    ) {
       return;
     }
 
     const geographicCenter = unproject({
-      x: drag.center.x - (event.clientX - drag.startX),
-      y: drag.center.y - (event.clientY - drag.startY),
+      x: drag.center.x - (
+        event.clientX - drag.startX
+      ),
+      y: drag.center.y - (
+        event.clientY - drag.startY
+      ),
     }, zoom);
+
     setCenter({
       latitude: geographicCenter.latitude,
       longitude: geographicCenter.longitude,
     });
   };
 
-  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId === event.pointerId) {
+  /** Finish the current pointer drag operation. */
+  const stopDragging = (
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    if (
+      dragRef.current?.pointerId
+      === event.pointerId
+    ) {
       dragRef.current = null;
     }
   };
 
-  const selectedProfile = profiles.find((profile) => profile.id === selectedId) || null;
+  const selectedProfile = profiles.find(
+    (profile) => profile.id === selectedId,
+  ) || null;
+
   const selectedPosition = selectedProfile
     ? markerPosition(selectedProfile.location)
     : null;
@@ -277,10 +460,6 @@ export default function UserMap({
       onPointerMove={handlePointerMove}
       onPointerUp={stopDragging}
       onPointerCancel={stopDragging}
-      onWheel={(event) => {
-        event.preventDefault();
-        changeZoom(zoom + (event.deltaY < 0 ? 1 : -1));
-      }}
     >
       {tiles.map((tile) => (
         <img
@@ -292,7 +471,10 @@ export default function UserMap({
           alt=""
           draggable={false}
           className="pointer-events-none absolute h-64 w-64 max-w-none"
-          style={{ left: tile.left, top: tile.top }}
+          style={{
+            left: tile.left,
+            top: tile.top,
+          }}
         />
       ))}
 
@@ -307,7 +489,9 @@ export default function UserMap({
       {profiles.map((profile) => (
         <MapMarker
           key={profile.id}
-          label={profile.firstName.slice(0, 1).toUpperCase()}
+          label={profile.firstName
+            .slice(0, 1)
+            .toUpperCase()}
           title={markerTitle(profile)}
           position={markerPosition(profile.location)}
           selected={selectedId === profile.id}
@@ -319,10 +503,20 @@ export default function UserMap({
         <div
           className="absolute z-30 w-64 -translate-x-1/2 rounded-xl border border-[#FF4D7E]/30 bg-[#15101C] p-3 shadow-2xl"
           style={{
-            left: clamp(selectedPosition.x, 140, dimensions.width - 140),
-            top: clamp(selectedPosition.y - 150, 12, dimensions.height - 170),
+            left: clamp(
+              selectedPosition.x,
+              140,
+              dimensions.width - 140,
+            ),
+            top: clamp(
+              selectedPosition.y - 150,
+              12,
+              dimensions.height - 170,
+            ),
           }}
-          onPointerDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
         >
           <div className="flex gap-3">
             <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-[#332844]">
@@ -335,22 +529,32 @@ export default function UserMap({
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-[#F5EFE9]">
-                  {selectedProfile.firstName.slice(0, 1).toUpperCase()}
+                  {selectedProfile.firstName
+                    .slice(0, 1)
+                    .toUpperCase()}
                 </div>
               )}
             </div>
+
             <div className="min-w-0">
               <p className="truncate font-medium text-[#F5EFE9]">
-                {selectedProfile.firstName} {selectedProfile.lastName}, {selectedProfile.age}
+                {selectedProfile.firstName}{' '}
+                {selectedProfile.lastName},{' '}
+                {selectedProfile.age}
               </p>
+
               <p className="mt-0.5 truncate text-xs text-[#9C8FA8]">
                 {selectedProfile.location.name}
               </p>
+
               <p className="mt-1 text-xs text-[#F2C879]">
-                {selectedProfile.distanceKm} km · fame {selectedProfile.fameRating}
+                {selectedProfile.distanceKm} km
+                {' · '}
+                fame {selectedProfile.fameRating}
               </p>
             </div>
           </div>
+
           <Link
             href={`/users/${encodeURIComponent(selectedProfile.username)}`}
             className="mt-3 block rounded-lg bg-[#FF4D7E] px-3 py-2 text-center text-sm font-medium text-[#15101C] hover:bg-[#FF6A93]"
@@ -362,7 +566,9 @@ export default function UserMap({
 
       <div
         className="absolute right-3 top-3 z-40 flex flex-col overflow-hidden rounded-lg border border-[#332844] bg-[#15101C]/95 shadow-lg"
-        onPointerDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
       >
         <button
           type="button"
@@ -373,6 +579,7 @@ export default function UserMap({
         >
           +
         </button>
+
         <button
           type="button"
           onClick={() => changeZoom(zoom - 1)}
@@ -385,12 +592,23 @@ export default function UserMap({
       </div>
 
       <div className="absolute bottom-2 right-2 z-40 rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-black">
-        © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a> contributors
+        ©{' '}
+        <a
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          OpenStreetMap
+        </a>{' '}
+        contributors
       </div>
     </div>
   );
 }
 
+
+/** Render one profile marker at its calculated map position. */
 function MapMarker({
   label,
   title,
@@ -415,7 +633,9 @@ function MapMarker({
         event.stopPropagation();
         onClick();
       }}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
       className={`absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-lg transition hover:scale-110 ${
         current
           ? 'h-10 w-10 border-white bg-[#2F80ED] text-white'
@@ -423,7 +643,10 @@ function MapMarker({
             ? 'h-11 w-11 border-white bg-[#FF4D7E] text-[#15101C]'
             : 'h-9 w-9 border-[#F5EFE9] bg-[#FF4D7E] text-[#15101C]'
       }`}
-      style={{ left: position.x, top: position.y }}
+      style={{
+        left: position.x,
+        top: position.y,
+      }}
     >
       {label}
     </button>

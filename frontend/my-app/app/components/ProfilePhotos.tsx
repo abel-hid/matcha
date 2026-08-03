@@ -1,6 +1,7 @@
 'use client';
 
 import React, { DragEvent, useRef, useState } from 'react';
+import { apiErrorMessage, errorCode } from '@/app/lib/apiError';
 import PhotoEditor from '@/app/components/PhotoEditor';
 import { profileService } from '@/app/services/api';
 import type { Photo, User } from '@/app/types';
@@ -21,6 +22,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 8_000;
 const MAX_IMAGE_PIXELS = 20_000_000;
 
+/** Check the file header so renamed non-image files cannot enter the editor. */
 const hasSupportedImageSignature = async (file: File) => {
   const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   const isPng = (
@@ -43,6 +45,7 @@ const hasSupportedImageSignature = async (file: File) => {
   return isPng || isJpeg;
 };
 
+/** Validate image type, signature, size, and browser decodability before upload. */
 const validateImageFile = async (file: File) => {
   if (file.size > MAX_FILE_SIZE) {
     return 'Images must be under 5MB.';
@@ -74,6 +77,7 @@ const validateImageFile = async (file: File) => {
   return null;
 };
 
+/** Manage upload, replacement, primary selection, ordering, and deletion for five photos. */
 export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfilePhotosProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -89,6 +93,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
   ));
   const slots = Array.from({ length: MAX_PHOTOS }, (_, index) => sorted[index] || null);
 
+  /** Close the editor and revoke temporary object URLs to avoid memory leaks. */
   const closeEditor = () => {
     if (editor) {
       URL.revokeObjectURL(editor.sourceUrl);
@@ -96,6 +101,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     setEditor(null);
   };
 
+  /** Load a selected image into the editor after all local checks pass. */
   const openFileEditor = async (file: File) => {
     setError('');
     const validationError = await validateImageFile(file);
@@ -115,6 +121,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     });
   };
 
+  /** Open the first file selected through the native file picker. */
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -123,6 +130,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     }
   };
 
+  /** Handle a dropped image while preventing the browser from opening the file. */
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
@@ -132,6 +140,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     }
   };
 
+  /** Download an existing gallery image and reopen it in the same safe editor. */
   const handleEdit = async (photo: Photo) => {
     setBusyId(photo.id);
     setError('');
@@ -152,6 +161,7 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     }
   };
 
+  /** Upload a newly edited image or replace the currently selected gallery photo. */
   const saveEditedPhoto = async (file: File) => {
     if (!editor) {
       return;
@@ -165,31 +175,31 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
         : await profileService.replacePhoto(editor.photoId, file);
       onChange(data.user);
       closeEditor();
-    } catch (err: any) {
-      setError(
-        err.response?.data?.message
-        || (err.code === 'ERR_NETWORK'
-          ? 'The backend is unavailable. Try again when it is running.'
-          : 'Failed to save the edited photo.')
-      );
+    } catch (err: unknown) {
+      const fallback = errorCode(err) === 'ERR_NETWORK'
+        ? 'The backend is unavailable. Try again when it is running.'
+        : 'Failed to save the edited photo.';
+      setError(apiErrorMessage(err, fallback));
     } finally {
       setSaving(false);
     }
   };
 
+  /** Promote a photo to primary and refresh the canonical gallery order. */
   const handleSetPrimary = async (photoId: number) => {
     setBusyId(photoId);
     setError('');
     try {
       const data = await profileService.setPrimaryPhoto(photoId);
       onChange(data.user);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update primary photo.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to update primary photo.'));
     } finally {
       setBusyId(null);
     }
   };
 
+  /** Delete a non-final photo and apply the backend primary-photo fallback. */
   const handleDelete = async (photoId: number) => {
     if (sorted.length === 1) {
       setError('At least one profile photo is required.');
@@ -201,8 +211,8 @@ export default function ProfilePhotos({ photos, apiBaseUrl, onChange }: ProfileP
     try {
       const data = await profileService.deletePhoto(photoId);
       onChange(data.user);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete photo.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to delete photo.'));
     } finally {
       setBusyId(null);
     }

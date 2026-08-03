@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { profileService } from '@/app/services/api';
 
 interface TagOption {
@@ -13,6 +14,7 @@ interface ProfileTagsInputProps {
   onChange: (tagIds: number[]) => Promise<void>;
 }
 
+/** Select reusable interests from the fixed backend catalogue. */
 export default function ProfileTagsInput({ value, onChange }: ProfileTagsInputProps) {
   const [allTags, setAllTags] = useState<TagOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,10 +25,11 @@ export default function ProfileTagsInput({ value, onChange }: ProfileTagsInputPr
     profileService
       .getAllTags()
       .then((data) => setAllTags(data.tags))
-      .catch((err: any) => setError(err.response?.data?.message || 'Failed to load interests.'))
+      .catch((err: unknown) => setError(apiErrorMessage(err, 'Failed to load interests.')))
       .finally(() => setLoading(false));
   }, []);
 
+  /** Toggle one predefined interest and immediately persist the new selection. */
   const toggleTag = async (tag: TagOption) => {
     const selectedIds = allTags
       .filter((option) => value.includes(option.name))
@@ -46,8 +49,8 @@ export default function ProfileTagsInput({ value, onChange }: ProfileTagsInputPr
     setSaving(true);
     try {
       await onChange(nextIds);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update interests.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to update interests.'));
     } finally {
       setSaving(false);
     }

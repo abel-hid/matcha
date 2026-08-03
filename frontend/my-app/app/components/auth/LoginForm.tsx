@@ -1,16 +1,17 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/app/context/AuthContext';
-import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import AuthShowcase from './Authshowcase'
+import { useRouter, useSearchParams } from 'next/navigation';
+
+import { useAuth } from '@/app/context/AuthContext';
+import { apiErrorMessage } from '@/app/lib/apiError';
+
+import AuthShowcase from './AuthShowcase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// #15101C
-// #FF4D7E
-// #F2C879
+/** Authenticate local credentials or start a configured OAuth flow. */
 export default function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -33,6 +34,7 @@ export default function LoginForm() {
     }
   }, [searchParams]);
 
+  /** Authenticate the credentials and route the user according to profile completion. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -41,19 +43,19 @@ export default function LoginForm() {
     try {
       const loggedInUser = await login(username, password);
       router.push(loggedInUser.isProfileComplete ? '/' : '/profile');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Invalid credentials');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Invalid credentials'));
     } finally {
       setLoading(false);
     }
   };
 
   if (authLoading || user) {
-    return <div className="min-h-screen bg-[#15101C]" />;
+    return <div className="min-h-[calc(100vh-8rem)] bg-[#15101C]" />;
   }
 
   return (
-    <div className="flex min-h-screen bg-[#15101C]">
+    <div className="flex min-h-[calc(100vh-8rem)] bg-[#15101C]">
       <AuthShowcase
         eyebrow="Members"
         headline="Good things start with a conversation."
@@ -172,6 +174,7 @@ export default function LoginForm() {
   );
 }
 
+/** Translate a safe OAuth error code into a user-facing message. */
 function oauthErrorMessage(code: string): string {
   switch (code) {
     case 'invalid_state':
@@ -196,12 +199,14 @@ function oauthErrorMessage(code: string): string {
   }
 }
 
+/** Render the compact 42 provider mark. */
 function FortyTwoIcon() {
   return (
     <img src="/42_Logo.svg" alt="42" width={18} height={18} />
   );
 }
 
+/** Render the compact Google provider mark. */
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

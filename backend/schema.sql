@@ -1,3 +1,4 @@
+-- Core account, profile, location, presence, and token-revocation state.
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL CHECK (length(btrim(username)) > 0),
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
     CHECK ((latitude IS NULL) = (longitude IS NULL))
 );
 
+-- Server-side session rows make logout and password-reset revocation immediate.
 CREATE TABLE IF NOT EXISTS auth_sessions (
     id UUID PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -49,6 +51,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 );
 
 
+-- One provider identity can belong to only one local account.
 CREATE TABLE IF NOT EXISTS oauth_identities (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -62,6 +65,7 @@ CREATE TABLE IF NOT EXISTS oauth_identities (
     UNIQUE (user_id, provider)
 );
 
+-- Reusable interests are fixed and shared by every profile.
 CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL CHECK (length(btrim(name)) > 0),
@@ -98,6 +102,7 @@ CREATE TABLE IF NOT EXISTS user_tags (
     PRIMARY KEY (user_id, tag_id)
 );
 
+-- Photo order is explicit; a partial unique index enforces one primary image.
 CREATE TABLE IF NOT EXISTS photos (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -107,6 +112,7 @@ CREATE TABLE IF NOT EXISTS photos (
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- Likes are directional; two opposite rows represent a match.
 CREATE TABLE IF NOT EXISTS user_likes (
     liker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     liked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -115,6 +121,7 @@ CREATE TABLE IF NOT EXISTS user_likes (
     CHECK (liker_id <> liked_id)
 );
 
+-- Blocks hide profiles and disable interactions in both directions.
 CREATE TABLE IF NOT EXISTS user_blocks (
     blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -123,6 +130,7 @@ CREATE TABLE IF NOT EXISTS user_blocks (
     CHECK (blocker_id <> blocked_id)
 );
 
+-- visit_id makes one browser visit idempotent while preserving real visit history.
 CREATE TABLE IF NOT EXISTS user_views (
     id SERIAL PRIMARY KEY,
     viewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -133,6 +141,7 @@ CREATE TABLE IF NOT EXISTS user_views (
     CHECK (viewer_id <> viewed_id)
 );
 
+-- A connected unlike suppresses future notifications until the user likes again.
 CREATE TABLE IF NOT EXISTS notification_suppressions (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     suppressed_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -141,6 +150,7 @@ CREATE TABLE IF NOT EXISTS notification_suppressions (
     CHECK (user_id <> suppressed_user_id)
 );
 
+-- Messages remain historical, while route authorization controls current chat access.
 CREATE TABLE IF NOT EXISTS messages (
     id SERIAL PRIMARY KEY,
     sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -151,6 +161,7 @@ CREATE TABLE IF NOT EXISTS messages (
     CHECK (sender_id <> receiver_id)
 );
 
+-- Bonus date proposals preserve history through explicit status transitions.
 CREATE TABLE IF NOT EXISTS date_events (
     id SERIAL PRIMARY KEY,
     proposer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -165,6 +176,7 @@ CREATE TABLE IF NOT EXISTS date_events (
     CHECK (proposer_id <> recipient_id)
 );
 
+-- The approved report flow records one fake-account report per pair.
 CREATE TABLE IF NOT EXISTS reports (
     id SERIAL PRIMARY KEY,
     reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -175,6 +187,7 @@ CREATE TABLE IF NOT EXISTS reports (
     CHECK (reporter_id <> reported_user_id)
 );
 
+-- Persisted notifications support unread state in addition to live Socket.IO delivery.
 CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -185,6 +198,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- Indexes support session checks, discovery, activity, chat, dates, and unread queries.
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
     ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_active
@@ -234,6 +248,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread
     ON notifications(user_id, created_at DESC)
     WHERE is_read = FALSE;
 
+-- Re-applying schema.sql safely upgrades older databases to include date notifications.
 ALTER TABLE notifications
     DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notifications

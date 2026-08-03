@@ -11,6 +11,7 @@ import React, {
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
+import { apiErrorMessage, apiErrorStatus } from '@/app/lib/apiError';
 import { useAudioCall } from '@/app/components/AudioCallProvider';
 import { useNotifications } from '@/app/components/NotificationBell';
 import { useAuth } from '@/app/context/AuthContext';
@@ -31,10 +32,8 @@ const CONVERSATION_PAGE_SIZE = 50;
 const FALLBACK_POLL_INTERVAL_MS = 8_000;
 const MESSAGE_MAX_LENGTH = 1000;
 
-function mergeMessages(
-  current: ChatMessage[],
-  incoming: ChatMessage[]
-) {
+/** Merge live and paginated messages without duplicates and keep chronological order. */
+function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
   const messagesById = new Map<number, ChatMessage>();
 
   for (const message of [...current, ...incoming]) {
@@ -51,6 +50,7 @@ function mergeMessages(
   });
 }
 
+/** Format a message timestamp for the current browser locale. */
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleString([], {
     dateStyle: 'short',
@@ -58,6 +58,7 @@ function formatMessageTime(value: string) {
   });
 }
 
+/** Describe online or last-seen state for a conversation contact. */
 function formatPresence(user: ChatUser) {
   if (user.isOnline) {
     return 'Online';
@@ -70,6 +71,7 @@ function formatPresence(user: ChatUser) {
   return `Last seen ${new Date(user.lastActivity).toLocaleString()}`;
 }
 
+/** Coordinate conversation loading, live messages, read receipts, and audio calls. */
 function MessagesPageContent() {
   const searchParams = useSearchParams();
   const requestedUsername = searchParams.get('with');
@@ -134,10 +136,9 @@ function MessagesPageContent() {
 
         return data.conversations[0]?.user.id ?? null;
       });
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'Conversations could not be loaded.'
+        apiErrorMessage(requestError, 'Conversations could not be loaded.')
       );
     } finally {
       setLoadingConversations(false);
@@ -200,10 +201,9 @@ function MessagesPageContent() {
     setError('');
 
     loadConversation(selectedUserId)
-      .catch((requestError: any) => {
+      .catch((requestError: unknown) => {
         setError(
-          requestError.response?.data?.message
-          || 'The conversation could not be loaded.'
+          apiErrorMessage(requestError, 'The conversation could not be loaded.')
         );
         setPartner(null);
         setMessages([]);
@@ -366,6 +366,7 @@ function MessagesPageContent() {
     selectedUserId,
   ]);
 
+  /** Send a trimmed message and reconcile the optimistic conversation state. */
   const handleSend = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -403,22 +404,22 @@ function MessagesPageContent() {
       ));
       setDraft('');
       await loadConversations();
-    } catch (requestError: any) {
-      const status = requestError.response?.status;
+    } catch (requestError: unknown) {
+      const status = apiErrorStatus(requestError);
 
       if (status === 403 || status === 404) {
         setCanMessage(false);
       }
 
       setError(
-        requestError.response?.data?.message
-        || 'The message could not be sent.'
+        apiErrorMessage(requestError, 'The message could not be sent.')
       );
     } finally {
       setSending(false);
     }
   };
 
+  /** Fetch the previous conversation page without disturbing newer messages. */
   const handleLoadOlder = async () => {
     if (!selectedUserId || loadingOlder || page >= totalPages) {
       return;
@@ -435,10 +436,9 @@ function MessagesPageContent() {
         false,
         false
       );
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'Older messages could not be loaded.'
+        apiErrorMessage(requestError, 'Older messages could not be loaded.')
       );
     } finally {
       setLoadingOlder(false);
@@ -708,6 +708,7 @@ function MessagesPageContent() {
   );
 }
 
+/** Render this application route and delegate its feature logic to the page component. */
 export default function MessagesPage() {
   return (
     <Suspense

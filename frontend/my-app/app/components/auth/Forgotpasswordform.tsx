@@ -2,15 +2,18 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
-import AuthShowcase from './Authshowcase';
+import AuthShowcase from './AuthShowcase';
 
+/** Submit a neutral password-reset request without exposing account existence. */
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
+  /** Request a reset email while preserving the backend’s account-enumeration protection. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -19,8 +22,8 @@ export default function ForgotPasswordForm() {
     try {
       await authService.forgotPassword(email);
       setSent(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Something went wrong. Please try again.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Something went wrong. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -28,7 +31,7 @@ export default function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#15101C] px-6">
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center bg-[#15101C] px-6">
         <div className="w-full max-w-sm rounded-xl border border-[#332844] bg-[#1E1728] p-8 text-center">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF4D7E]/15">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -58,7 +61,7 @@ export default function ForgotPasswordForm() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#15101C]">
+    <div className="flex min-h-[calc(100vh-8rem)] bg-[#15101C]">
       <AuthShowcase
         eyebrow="Account recovery"
         headline="It happens to everyone."

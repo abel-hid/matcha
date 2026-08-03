@@ -1,16 +1,112 @@
 # Matcha
 
-This repository contains a Flask/PostgreSQL backend and a Next.js/TypeScript frontend.
+Matcha is a full-stack dating application built for the **Web Matcha 6.1** subject. It covers the mandatory path from account creation to a real-time conversation and adds the approved OAuth, photo editing, map, audio-call, and date-planning bonuses.
 
-`backend/schema.sql` is the complete database definition. This project does not use migrations.
+The project uses Flask, manually written PostgreSQL queries, Next.js with TypeScript, Socket.IO, WebRTC audio, and Docker Compose. The normal runtime is fully containerized; the host requires only Docker Engine or Docker Desktop with Docker Compose.
 
-## Docker runtime
+## Documentation set
 
-PostgreSQL, schema setup, evaluation seeding, Flask, Socket.IO, and Next.js all run in Docker containers. The host needs only Docker Engine or Docker Desktop with Docker Compose.
+This archive contains four project guides plus the official subject:
 
-The frontend is built in production mode. This removes Next.js development messages such as HMR and the React DevTools recommendation from the Chrome console. The application does not override `console`, suppress unhandled exceptions, or convert legitimate client errors into fake HTTP `200` responses. Normal successful flows should have a clean console, while controlled invalid actions still retain the appropriate HTTP status in the Network panel as required by the subject.
+| Document | Purpose |
+|---|---|
+| `README.md` | Installation, operation, and the complete user-facing flow |
+| `README_TECHNICAL.md` | Architecture and implementation from system level down to individual mechanisms |
+| `MANUAL_AND_POSTMAN_TESTING.md` | Browser, API, Postman, Socket.IO, and failure-case verification |
+| `FILE_STRUCTURE.md` | Final source tree and the responsibility of every important file |
 
-## Environment setup
+The importable Postman files are stored under `postman/`.
+
+## Source policy
+
+The delivery archive intentionally excludes:
+
+- `backend/.env` and all real credentials;
+- `.git` history;
+- backend and frontend automated test files;
+- `node_modules`, `.next`, caches, logs, and generated build output;
+- local uploaded photos and PostgreSQL volume data;
+- obsolete planning files, patch rejects, default Next.js assets, and editor-specific files.
+
+`backend/.env.example` is safe to commit. Create a private `backend/.env` before starting the application.
+
+## Main features
+
+### Mandatory Matcha flow
+
+- Local registration with email, username, first name, last name, and strong password validation.
+- Unique email verification link before local login.
+- Login, short access session, refresh session, server-side revocation, single-click logout, and password reset.
+- Mandatory profile completion gate.
+- Gender, sexual preferences, biography, reusable interests, birth date, location, and up to five profile photos.
+- Exactly one primary profile photo.
+- GPS with explicit consent and manual location fallback.
+- Fame rating, viewers, incoming likes, outgoing likes, and matches.
+- Compatible profile suggestions ranked by geography, common interests, and fame.
+- Advanced search and filtering by age, fame, location, and one or more tags.
+- Public profiles, visit history, like, mutual match, unlike, block, unblock, and fake-account report.
+- Online status and last activity.
+- Real-time text chat for connected users only.
+- Real-time notifications for views, likes, matches, messages, and connected unlikes.
+- Persistent unread notification and unread message state.
+- Exactly 500 deterministic evaluation profiles.
+
+### Approved bonuses
+
+- Google and 42 OAuth using state validation and the same secure cookie session system.
+- Drag-and-drop photo upload with preview, crop, rotation, and controlled filters.
+- Interactive user map with privacy-rounded public coordinates.
+- Audio-only WebRTC calls between connected users.
+- Real-life date proposals with accept, decline, cancel, upcoming, and history states.
+
+## Project structure
+
+```text
+matcha/
+├── README.md
+├── README_TECHNICAL.md
+├── MANUAL_AND_POSTMAN_TESTING.md
+├── FILE_STRUCTURE.md
+├── SUBJECT.MD
+├── docker-compose.yml
+├── start.sh
+├── stop.sh
+├── postman/
+├── backend/
+│   ├── app/
+│   ├── schema.sql
+│   ├── seed.py
+│   ├── initdb.py
+│   ├── run.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── .env.example
+└── frontend/
+    └── my-app/
+        ├── app/
+        ├── public/
+        ├── package.json
+        ├── package-lock.json
+        ├── next.config.ts
+        ├── tsconfig.json
+        └── Dockerfile
+```
+
+See `FILE_STRUCTURE.md` for the complete tree.
+
+# 1. Local evaluation startup
+
+## 1.1 Requirements
+
+Install only:
+
+- Docker Engine or Docker Desktop;
+- Docker Compose v2;
+- a recent Firefox or Chrome browser.
+
+Python, Node.js, PostgreSQL, package managers, and project dependencies run inside containers.
+
+## 1.2 Create private environment configuration
 
 From the repository root:
 
@@ -18,28 +114,41 @@ From the repository root:
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and replace every placeholder secret. Google and 42 OAuth variables may remain empty. For either provider, set all three variables for that provider or leave all three empty.
+Replace every `replace_with_...` value. At minimum, configure:
 
-Never commit `backend/.env`. Keep `JWT_COOKIE_SECURE=false` for the local HTTP setup. Use `true` only when the application is served through HTTPS.
+```dotenv
+SECRET_KEY=<long-random-secret>
+JWT_SECRET_KEY=<different-long-random-secret>
+POSTGRES_PASSWORD=<strong-local-database-password>
+MAIL_SERVER=<working-smtp-server>
+MAIL_DEFAULT_SENDER=<sender-address>
+```
 
-## Start the complete application
+For authenticated SMTP, set both:
 
-From the repository root:
+```dotenv
+MAIL_USERNAME=<smtp-username>
+MAIL_PASSWORD=<smtp-password>
+```
+
+The Docker configuration fixes the application to the local addresses `http://localhost:3000` and `http://localhost:5000`. Google and 42 OAuth are optional. For a provider, set both the client ID and client secret or leave both empty. The local callback URLs are fixed in the backend configuration.
+
+## 1.3 Start everything
 
 ```bash
-chmod +x start.sh
+chmod +x start.sh stop.sh
 ./start.sh
 ```
 
-That single command:
+The script prints seven explicit phases. It:
 
-1. validates the Docker and environment configuration;
-2. builds the backend and production frontend images;
-3. starts PostgreSQL and waits for it to become healthy;
+1. validates Docker and environment configuration;
+2. builds the backend and frontend images, then validates backend configuration;
+3. starts PostgreSQL and waits for health;
 4. applies `backend/schema.sql`;
-5. regenerates exactly 500 deterministic evaluation profiles;
-6. starts Flask, Socket.IO, and Next.js;
-7. waits for the backend and frontend health checks.
+5. replaces only `seed_` accounts and creates exactly 500 evaluation profiles;
+6. starts Flask, Socket.IO, and the compiled Next.js server;
+7. waits for backend and frontend health checks.
 
 Open:
 
@@ -47,436 +156,499 @@ Open:
 http://localhost:3000
 ```
 
-The backend is available at:
+Backend health endpoint:
 
 ```text
-http://localhost:5000
+http://localhost:5000/api/health
 ```
 
-View container status:
+## 1.4 Evaluation accounts
+
+```text
+Usernames: seed_001 through seed_500
+Password:  lhfTYh6452fdHH9@
+```
+
+`seed_001` and `seed_002` are a deterministic mutual match, which makes them useful for chat, audio-call, notification, and date tests.
+
+## 1.5 Stop without deleting data
+
+```bash
+./stop.sh
+```
+
+PostgreSQL and uploaded-image named volumes remain intact.
+
+## 1.6 View service state and logs
 
 ```bash
 docker compose --env-file backend/.env ps
 ```
 
-View service logs:
-
 ```bash
 docker compose --env-file backend/.env logs -f backend frontend
 ```
 
-Stop the application without deleting PostgreSQL data:
+## 1.7 Destructive database reset
 
-```bash
-docker compose --env-file backend/.env down
-```
-
-The PostgreSQL and upload Docker named volumes persist between runs. The startup script reuses the previous database volume and replaces only accounts whose usernames begin with `seed_`.
-
-## Database reset
-
-The reset command deletes every table and every row in the PostgreSQL `public` schema, then recreates the database structure from `backend/schema.sql`.
-
-From the repository root:
+This removes all accounts, sessions, relationships, messages, dates, reports, and notifications before reapplying the schema:
 
 ```bash
 docker compose --env-file backend/.env run --rm schema python initdb.py --reset
 ```
 
-After a reset, existing users, authentication sessions, photos, likes, blocks, visit history, notification suppressions, messages, reports and notifications are gone. The Step 5 seed command restores the required evaluation profiles.
-
-Step 4 changes `user_views` from one row per viewer/profile pair to separate visit-history rows and adds notification suppression after a connected unlike. Upgrading from Step 3 therefore requires this destructive reset. Running `python initdb.py` without `--reset` cannot alter an existing table created by an older `CREATE TABLE IF NOT EXISTS` definition.
-
-
-## Evaluation seed data
-
-Step 5 provides one deterministic seed command for the required evaluation
-dataset. It preserves non-seed accounts and replaces only usernames beginning
-with `seed_`.
-
-The normal Docker startup runs the seed automatically:
-
-```bash
-./start.sh
-```
-
-To rerun only the fixed seed manually:
+Regenerate the required evaluation dataset afterward:
 
 ```bash
 docker compose --env-file backend/.env run --rm seed
 ```
 
-The default command creates exactly 500 verified, complete profiles:
+# 2. Complete application flow
+
+## 2.1 First browser load and authentication bootstrap
+
+The frontend does not call a protected endpoint merely to discover whether the browser is logged in. `AuthProvider` calls:
 
 ```text
-seed_001
-seed_002
-...
-seed_500
+POST /api/auth/refresh/bootstrap
 ```
 
-Every seed account uses this local evaluation password:
+Possible outcomes:
+
+- A valid refresh cookie and active server-side session return `authenticated: true`, the private user object, and a fresh access cookie.
+- Missing, expired, malformed, or revoked refresh state returns HTTP `200` with `authenticated: false` and clears stale cookies.
+- Unexpected network or server failures remain real failures and are shown as controlled UI state; they are not converted to fake successful responses.
+
+An authenticated incomplete user is sent to `/profile`. A complete user can enter the full application.
+
+## 2.2 Local registration
+
+The registration form requires:
+
+- username;
+- email;
+- first name;
+- last name;
+- password.
+
+The frontend provides immediate feedback, but the backend independently validates every value. The backend normalizes the email and username, rejects malformed names, rejects weak or common passwords, rejects account-detail similarity, enforces the bcrypt byte limit, and checks uniqueness.
+
+Successful sequence:
 
 ```text
-lhfTYh6452fdHH9
+submit registration
+→ validate all fields
+→ insert unverified account
+→ send unique verification email
+→ return HTTP 201
 ```
 
-This shared password is intentionally limited to generated local test data. It
-does not change or weaken registration password validation.
+Failure sequence:
 
-The seed includes:
+- Invalid shape or field: HTTP `400`.
+- Existing username or email: HTTP `409`.
+- Verification email cannot be sent: the newly inserted account is removed and HTTP `503` is returned.
 
-- ages from 18 through 80;
-- all supported genders and varied sexual preferences;
-- two to seven predefined interests per user;
-- one to five generated PNG photos with one primary photo;
-- Moroccan cities and neighborhoods with usable coordinates;
-- deterministic pending likes and mutual matches;
-- visit history and varied fame ratings.
+No password is ever stored in plain text.
 
-The command is repeatable. Running it again removes old `seed_` accounts and
-regenerates them without deleting manually registered users. Generated photos
-are stored in the ignored `backend/uploads` directory.
+## 2.3 Email verification
 
-`seed.py` accepts no command-line options and always generates exactly 500 profiles. This keeps the evaluation dataset and startup behavior deterministic.
+The email contains a signed, expiring token. Opening `/verify?token=...` causes the frontend to call:
 
-## Authentication sessions
+```text
+GET /api/auth/verify/<token>
+```
 
-Access and refresh JWTs are stored only in `HttpOnly` cookies. JavaScript can read the separate CSRF cookies but cannot read the authentication tokens themselves.
+The backend checks signature, age, user identifier, and email address. A valid unused token marks the account verified. Invalid, expired, already-used, or account-mismatched links return controlled HTTP `400` responses with a reason code.
 
-Each login or OAuth login creates an `auth_sessions` row. Protected requests are accepted only when that server-side session is active and the token version still matches the user. Logout revokes the current session. Password reset increments the token version and revokes every existing session for that account.
+The resend endpoint uses a neutral response so callers cannot determine whether an address exists.
 
-The frontend automatically uses the refresh cookie when the short access token expires. Keep the frontend and backend on the same hostname during local development, using `localhost` for both URLs.
+## 2.4 Login and session creation
 
-## Profile data model
+Local login checks the username, password hash, and verification state. Successful login creates:
 
-The profile stores `birth_date` and calculates age dynamically. Gender uses `male`, `female`, or `non-binary`. Sexual preferences are stored as a PostgreSQL array of those same values. New users start with all three values for the required default-bisexual behavior, but profile editing cannot save an empty preference array.
+- one `auth_sessions` database row;
+- one short-lived access JWT in an `HttpOnly` cookie;
+- one longer-lived refresh JWT in an `HttpOnly` cookie;
+- readable CSRF cookies used only to authorize unsafe requests.
 
-The `tags` table is seeded with exactly 20 approved reusable interests. Users select existing tag IDs and cannot create arbitrary tags. Tag replacement runs in one transaction.
+The JWT includes:
 
-Exact latitude and longitude remain available only in the authenticated user's private profile response. Public profile responses contain the approximate location name but not exact coordinates.
+- user ID;
+- server-side session ID;
+- user token version.
 
-Fame rating has one formula:
+Every protected request is rejected when the session is expired or revoked, or when the token version no longer matches the user.
+
+Login failures:
+
+- Missing username/password: `400`.
+- Wrong credentials: `401`.
+- Unverified account: `401` with verification guidance.
+
+## 2.5 Automatic refresh
+
+The Axios response interceptor retries one eligible request after an access-session failure. It sends the refresh CSRF token to `/api/auth/refresh`, receives a new access cookie, updates the access CSRF header, and retries the original request once.
+
+It never recursively refreshes authentication endpoints. A failed refresh clears readable cookie hints and returns the original failure to the caller.
+
+## 2.6 Logout
+
+Logout works from every authenticated page:
+
+```text
+click Log out
+→ POST /api/auth/logout
+→ revoke auth_sessions row
+→ disconnect every Socket.IO connection for that session
+→ clear JWT and CSRF cookies
+→ route to /login
+```
+
+A copied old access token cannot pass the server-side session check after logout.
+
+## 2.7 Forgotten password
+
+The forgot-password endpoint always returns the same successful message for valid email syntax, whether or not the account exists. Existing users receive a signed reset link.
+
+The reset flow validates:
+
+- token signature and expiration;
+- token email against a real account;
+- token version against the current account version;
+- replacement password strength and account-detail similarity.
+
+Successful reset changes the password, increments the token version, revokes every existing session, disconnects all user sockets, and clears browser cookies. Reusing the same reset link returns `reason: used`.
+
+## 2.8 OAuth login and account linking
+
+Google and 42 use the same flow:
+
+```text
+select provider
+→ create short-lived random state in an HttpOnly Flask session
+→ redirect to provider
+→ validate callback state once
+→ exchange code with timeout
+→ fetch provider profile
+→ normalize verified email and identity
+→ login linked account, link matching email, or create a verified account
+→ create normal Matcha cookie session
+→ redirect to /oauth-callback
+```
+
+JWTs never appear in the URL. Provider failures are converted to controlled login error codes. One provider identity cannot be linked to multiple accounts, and one account cannot have two identities from the same provider.
+
+## 2.9 Mandatory profile-completion gate
+
+After first login, an incomplete account can use only authentication and its own profile-completion functions. Both frontend routing and backend decorators enforce the rule.
+
+Completion requires:
+
+- non-empty first and last name;
+- valid email;
+- adult birth date;
+- gender;
+- at least one sexual preference;
+- non-empty biography;
+- at least one predefined reusable tag;
+- at least one profile photo;
+- exactly one primary photo;
+- valid latitude, longitude, and location label.
+
+Until all fields exist:
+
+- `/profile` remains available;
+- Discover, map, activity, blocks, public profiles, messages, dates, notifications, presence, and calls remain unavailable;
+- the account is not returned to other users.
+
+## 2.10 Editing identity and profile information
+
+The user can update first name, last name, email, birth date, gender, sexual preferences, and biography. Empty mandatory values are rejected.
+
+Changing email is special:
+
+1. the new address is validated and checked for uniqueness;
+2. a verification email is sent before the database update is finalized;
+3. the account becomes unverified;
+4. the user must verify the new email.
+
+Profile changes that influence fame rating trigger a recalculation.
+
+## 2.11 Reusable interests
+
+The database contains exactly the approved reusable catalogue. The frontend loads those tag records and submits their numeric IDs.
+
+The backend rejects:
+
+- a non-list body;
+- an empty list;
+- booleans or non-integer IDs;
+- more than 20 values;
+- identifiers not present in the catalogue.
+
+Replacement occurs in one database transaction, so the user never temporarily has a partially updated set.
+
+## 2.12 Profile photos and editor
+
+A user can store one to five photos. The first inserted photo becomes primary. A partial unique PostgreSQL index guarantees no more than one primary row per user.
+
+Upload pipeline:
+
+```text
+browser selects or drops image
+→ optional crop/rotation/filter preview
+→ multipart upload
+→ reject oversized input
+→ decode image content with Pillow
+→ reject unsupported or decompression-bomb input
+→ normalize orientation and dimensions
+→ re-encode as PNG or JPEG
+→ save random filename
+→ insert photo under per-user advisory lock
+```
+
+Changing the primary photo moves it to position zero. Deleting a primary photo promotes the next image. Deleting the final photo is rejected because the profile must retain one image.
+
+A text file renamed `.jpg` fails decoded-content validation.
+
+## 2.13 Location and consent
+
+The location section has explicit GPS consent.
+
+When consent is enabled:
+
+1. the browser requests geolocation permission;
+2. cached low-accuracy location may be tried first;
+3. a fresh higher-accuracy request follows;
+4. coordinates are validated against latitude and longitude ranges;
+5. reverse geocoding attempts to create a neighborhood or city label;
+6. valid coordinates remain usable even if reverse geocoding is unavailable.
+
+When consent is disabled or browser permission is denied, manual search remains mandatory. The user selects a geocoded city or neighborhood, and the same validated coordinates are saved with `gpsConsent: false`.
+
+Exact coordinates appear only in the owner’s private profile. Public profiles expose a location name, and the map receives rounded coordinates.
+
+## 2.14 Fame rating
+
+The fame score is consistent and bounded between 0 and 100:
 
 ```text
 received likes × 3
 + profile views × 0.5
-+ profile-completion points from 0 to 10
++ profile completion points from 0 to 10
 ```
 
-Uploaded photos are validated by decoded image content, re-encoded as PNG or JPEG, saved under random names, and limited to five through a transaction-level PostgreSQL advisory lock.
+The rating is recalculated when relevant profile data, likes, views, photos, tags, or blocks change.
 
+## 2.15 Discover and advanced search
 
-## Discover and advanced research
+The home route combines suggestions and advanced research.
 
-The home page combines the subject's suggested-profile list and advanced research. Default results require mutual preference compatibility and exclude the current user, blocked users, unverified users, and incomplete profiles.
+A candidate must be:
 
-Suggested ordering is:
+- verified;
+- complete;
+- not the current user;
+- not blocked in either direction;
+- compatible with both users’ gender preferences.
 
-1. same city;
-2. shortest geographical distance;
-3. highest common-tag count;
-4. highest fame rating.
+Default ordering gives priority to:
 
-The same page can filter by age range, fame range, city or neighborhood, and one or more predefined tags. It can sort by age, distance/location, fame, or common tags. Selecting multiple tags requires every selected tag to be present on the result profile.
+1. same geographical area;
+2. shortest calculated distance;
+3. most common tags;
+4. highest fame rating;
+5. stable ID tie-breaker.
 
+Filtering supports:
 
-Every valid public-profile visit creates a separate `user_views` row with its own timestamp. Mutual likes are derived from the two directional `user_likes` rows. A connected unlike removes only the current user's like, records the mandatory unlike notification, and suppresses future notifications from the disconnected user until the current user likes them again.
+- minimum and maximum age;
+- minimum and maximum fame;
+- city or neighborhood text;
+- one or multiple reusable tags.
 
-Blocking keeps historical visits, reports, and notifications, removes likes in both directions, and prevents profile access, interaction, and new notifications. Users can unblock from `/settings/blocked`, but old likes are not restored. Fake-account reporting remains one button and one unique report row per pair.
+When multiple tags are selected, every selected tag must exist on the candidate profile. Results can be sorted by age, distance/location, fame, or common tags in ascending or descending order. Pagination parameters are bounded.
 
-## Profile completion gate
+## 2.16 Interactive map
 
-After the first login, an incomplete account is restricted to `/profile`. The backend also enforces
-this rule, so changing the URL or calling social endpoints directly does not bypass it.
+The map reuses the same compatibility and filter rules as Discover. It receives rounded candidate coordinates, never exact private coordinates.
 
-Completion requires first name, last name, email, birth date, gender, at least one sexual preference,
-a non-empty biography, at least one predefined tag, at least one photo with one primary photo, and a
-usable GPS or manual location.
+The user can pan, zoom, select a marker, open the profile, and close the profile popup by clicking an empty map area or outside the map. The removed sort-direction controls do not affect discovery filtering.
 
-Until completion:
+## 2.17 Public profile and visits
 
-- the account is not returned as a public profile;
-- other profiles, activity, notifications, blocks, Discover, messages, and Socket.IO presence are unavailable;
-- authentication and profile-completion routes remain available.
-
-User information is saved with the button inside that section. Tags, photos, and location save
-automatically. The final selected preference, tag, and photo cannot be removed. The primary photo is
-ordered first and visibly marked in edit and public-profile views.
-
-This correction does not change the database schema, so it does not require a database reset.
-
-## Backend routes
-
-### Authentication
+Public URLs use:
 
 ```text
-GET    /api/auth/me
-POST   /api/auth/register
-GET    /api/auth/verify/<token>
-POST   /api/auth/resend-verification
-POST   /api/auth/login
-POST   /api/auth/refresh
-POST   /api/auth/logout
-POST   /api/auth/forgot-password
-POST   /api/auth/reset-password
-GET    /api/auth/verify-reset-token/<token>
+/users/<username>
 ```
 
-### Profile
+A public response excludes email, password hash, exact coordinates, session data, and OAuth identifiers. It includes profile details, photos, interests, fame, presence, last activity, and relationship state.
+
+Each page visit uses a browser-generated UUID. Repeating the same logical visit is idempotent; a later real visit uses a new UUID and creates another history row. A successful new visit creates the mandatory real-time view notification and updates fame rating.
+
+## 2.18 Likes, matches, and unlike
+
+A complete user with a primary photo can like another visible profile.
+
+- First directional like: target receives a `like` notification.
+- Opposite like already exists: both users receive `match` notifications and chat becomes available immediately.
+- Duplicate like: `409`.
+- Self-like: `400`.
+
+Unlike removes only the current user’s directional like. When the users were connected, it also:
+
+- creates the mandatory `unlike` notification for the other user;
+- disables chat in both open browsers;
+- ends an active or ringing audio call;
+- suppresses future notifications from the disconnected user until the current user likes them again.
+
+Historical messages remain stored but cannot be extended while disconnected.
+
+## 2.19 Block, unblock, and report
+
+Blocking performs one transaction that creates the block and removes both users’ likes. It then disables chat and ends calls in real time.
+
+A blocked user:
+
+- disappears from Discover, search, map, activity relationship lists, and public-profile access;
+- cannot send messages or calls;
+- cannot create notifications;
+- is represented as unavailable rather than revealing block direction.
+
+Unblocking removes only the block. Old likes are not restored.
+
+Reporting is one click and stores only `fake_account`. The unique pair constraint prevents duplicate reports.
+
+## 2.20 Activity
+
+The Activity page separates:
+
+- profile visits;
+- profiles liked by the user without a return like;
+- users who liked the profile without a return like;
+- mutual matches.
+
+Blocked users are excluded from the visible lists.
+
+## 2.21 Presence
+
+Socket.IO authenticates the access JWT cookie during the handshake and independently checks the server-side session and profile completion.
+
+Presence is tab-aware:
+
+- first connected tab marks the user online;
+- additional tabs do not duplicate the change;
+- closing one of several tabs keeps the user online;
+- final tab disconnect marks the user offline and stores last activity.
+
+Stale online flags are reset when the backend process starts.
+
+## 2.22 Real-time text chat
+
+Chat is available only while reciprocal likes exist and neither user is blocked.
+
+Send flow:
 
 ```text
-GET    /api/profile
-PUT    /api/profile
-GET    /api/profile/tags
-PUT    /api/profile/tags
-POST   /api/profile/photos
-DELETE /api/profile/photos/<photo_id>
-PUT    /api/profile/photos/<photo_id>/primary
-PUT    /api/profile/location
-GET    /api/profile/viewers
-GET    /api/profile/likes
+submit message
+→ validate target and relationship
+→ validate trimmed content and 1000-character limit
+→ persist message
+→ emit message to both user rooms
+→ create recipient notification
+→ update unread state
 ```
 
-### Users
+Opening a conversation marks incoming messages read and emits read receipts. The UI shows delivered/seen state and live presence. Network interruption falls back to API reload and unread counters rather than silently discarding persisted messages.
+
+## 2.23 Notifications
+
+Persisted notification types are:
 
 ```text
-GET    /api/users/blocked
-GET    /api/users/<user_id>
-GET    /api/users/by-username/<username>
-POST   /api/users/<user_id>/like
-DELETE /api/users/<user_id>/like
-POST   /api/users/<user_id>/block
-DELETE /api/users/<user_id>/block
-POST   /api/users/<user_id>/report
+like, view, message, match, unlike, date
 ```
 
-### Discover and advanced research
+The global provider receives Socket.IO events from any protected page. Each popup has its own timer and close button, so several notifications can appear simultaneously. The bell shows unread count and recent history.
+
+Blocks, incomplete profiles, and unlike suppression are checked before a notification row is created.
+
+## 2.24 Audio-only calls
+
+Calls are available only between connected, complete, non-blocked users.
+
+The browser requests:
+
+```ts
+navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+```
+
+No camera permission, camera track, video element, or video signaling exists.
+
+Call sequence:
 
 ```text
-GET /api/discover
+caller sends invitation
+→ recipient receives global popup
+→ recipient accepts or declines
+→ microphone permission is requested
+→ Socket.IO relays offer, answer, and ICE candidates
+→ WebRTC carries peer-to-peer audio
+→ either participant can mute or end
 ```
 
-With no custom criteria, this endpoint returns suggested compatible profiles ranked by same city, distance, common tags, and fame rating. The same endpoint accepts age, fame, location, tags, sorting, and pagination parameters for advanced research.
+Calls end on decline, no answer, hang up, participating-tab close, Socket.IO disconnect, relationship loss, block, unlike, microphone failure, or WebRTC failure.
 
-### Messages
+Call state is transient and kept in the single backend worker. Call media is not stored.
+
+## 2.25 Date proposals
+
+Connected users can propose a future date with:
+
+- timezone-aware date and time;
+- required location;
+- optional note.
+
+Status transitions:
 
 ```text
-GET  /api/messages
-GET  /api/messages/unread-count
-GET  /api/messages/<user_id>
-POST /api/messages/<user_id>
-PUT  /api/messages/<user_id>/read
+pending → accepted
+pending → declined
+pending → cancelled
+accepted future date → cancelled
 ```
 
-Only mutually connected users can send messages. PostgreSQL stores every
-message. A disconnected conversation remains available as read-only history,
-while a blocked conversation is hidden completely.
+Only the recipient can accept or decline. Either participant can cancel an allowed pending or future accepted event. Past or terminal events cannot be changed.
 
-### Notifications
+Date notifications are persisted and delivered live. Historical proposals remain visible after unlike but become non-actionable. Blocking hides related date records while the block exists.
 
-```text
-GET /api/notifications
-GET /api/notifications/unread-count
-PUT /api/notifications/<notification_id>/read
-PUT /api/notifications/read-all
-```
+# 3. HTTP behavior and error contract
 
-Notifications are persisted and delivered through authenticated Socket.IO.
-When the socket is unavailable, the frontend refreshes notification state every
-eight seconds so the mandatory ten-second delivery limit still has an HTTP
-recovery path.
+Successful API responses use the status appropriate to the operation, commonly `200`, `201`, or `204` where applicable. Controlled failures use real HTTP statuses:
 
-### OAuth
+| Status | Meaning in Matcha |
+|---|---|
+| `400` | Malformed JSON, invalid field, invalid transition, self-action, invalid upload |
+| `401` | Missing, invalid, expired, or revoked authentication |
+| `403` | Complete-profile or relationship authorization failure, CSRF failure |
+| `404` | Missing or deliberately unavailable resource |
+| `409` | Duplicate username/email, like, or report |
+| `413` | Request or upload exceeds configured size |
+| `503` | Required email or OAuth upstream service is unavailable |
+| `500` | Unexpected server or PostgreSQL failure; details remain in server logs only |
 
-```text
-GET /api/auth/oauth/42/login
-GET /api/auth/oauth/42/callback
-GET /api/auth/oauth/google/login
-GET /api/auth/oauth/google/callback
-```
+Every public error response is JSON and does not expose a stack trace.
 
-### Dates
+# 4. Manual and Postman verification
 
-```text
-GET  /api/dates
-POST /api/dates/<user_id>
-PUT  /api/dates/<event_id>/respond
-PUT  /api/dates/<event_id>/cancel
-```
+See `MANUAL_AND_POSTMAN_TESTING.md` for:
 
-### Uploaded files
-
-```text
-GET /uploads/<filename>
-```
-
-## Frontend routes
-
-Existing routes:
-
-```text
-/
-/login
-/signup
-/verify
-/forgot-password
-/reset-password
-/oauth-callback
-/profile
-/profile/activity
-/settings/blocked
-/users/[username]
-/messages
-/dates
-```
-
-The `/` route is the combined Discover and advanced-research page. There are no separate `/browse` or `/search` pages. The `/messages` route lists current matches and previous unblocked conversations, delivers new messages in real time, and disables sending immediately after unlike or block.
-
-## Socket.IO events
-
-Events received by the backend:
-
-```text
-connect
-disconnect
-call_start
-call_accept
-call_decline
-call_signal
-call_end
-```
-
-Events emitted by the backend:
-
-```text
-presence
-notification
-message
-conversation_status
-call_incoming
-call_accepted
-call_declined
-call_signal
-call_ended
-date_event
-```
-
-`message` delivers the stored PostgreSQL message to both participants.
-`conversation_status` enables chat after a match and disables it immediately
-after unlike or block.
-
-## Baseline tests
-
-From `backend/` with the virtual environment active:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-
-## Step 4 relationship correction
-
-- Blocking removes likes in both directions and immediately disconnects a match.
-- Profile reads are side-effect free; visits are recorded through `POST /api/users/<id>/visit` with a UUID idempotency key.
-- `/api/profile/activity` separates visits, outgoing pending likes, incoming pending likes, and matches.
-
-## Step 8 bonuses: OAuth, gallery editor, and user map
-
-### OAuth configuration
-
-Google and 42 remain optional. Leave all three variables for a provider empty to disable it, or configure the complete provider group in `backend/.env`.
-
-```env
-OAUTH_TIMEOUT_SECONDS=8
-OAUTH_STATE_MAX_AGE_SECONDS=600
-
-FORTYTWO_CLIENT_ID=...
-FORTYTWO_CLIENT_SECRET=...
-FORTYTWO_REDIRECT_URI=http://localhost:5000/api/auth/oauth/42/callback
-
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/oauth/google/callback
-```
-
-The configured redirect URI must exactly match the URI registered with the provider. OAuth callbacks create the same HttpOnly-cookie session used by local login. Provider tokens are never placed in frontend URLs.
-
-A user may link one Google identity and one 42 identity to the same Matcha account when the verified provider email matches the existing account email. Provider identities are stored in `oauth_identities`, not in the `users` row.
-
-### Gallery editor
-
-The profile gallery supports drag-and-drop upload, square cropping, 90-degree rotation, and four controlled filter choices. Browser editing creates a JPEG upload, but the backend still independently validates the image contents, dimensions, size, ownership, five-photo limit, and primary-photo invariant before re-encoding and storing it.
-
-### Interactive map
-
-The protected `/map` page uses the same compatibility, completion, block, age, fame, location, tag, and sorting rules as Discover. Exact candidate coordinates remain server-side. The API rounds marker coordinates before returning them. The current user can explicitly consent to refreshing their position through browser GPS or keep the manual location saved from Profile.
-
-Map tiles default to OpenStreetMap and are displayed with attribution. A different compatible template can be selected with `NEXT_PUBLIC_MAP_TILE_URL`, using `{z}`, `{x}`, and `{y}` placeholders.
-
-Because Step 8 adds the `oauth_identities` table and removes the old single-provider columns from `users`, recreate the database from `schema.sql`, then rerun the seed command.
-
-## Step 9: audio calls and date scheduling
-
-Step 9 intentionally implements audio only. The browser never requests camera
-permission and no video track is created or transmitted.
-
-Connected, non-blocked users can start an audio call from a public profile or
-from the Messages conversation header. The global call interface remains
-visible while navigating between protected pages. It supports incoming-call
-accept/decline, outgoing ringing, a 30-second no-answer timeout, mute, elapsed
-call time, and hang-up. Flask-SocketIO authorizes every invitation and WebRTC
-signal against the current mutual connection. Unlike, block, logout,
-disconnection, or a lost relationship ends the call immediately.
-
-WebRTC uses the optional Docker build variable:
-
-```env
-NEXT_PUBLIC_WEBRTC_STUN_URL=stun:stun.l.google.com:19302
-```
-
-Set it to another STUN URL when required by the evaluation network. Media is
-still peer-to-peer; Socket.IO carries only invitation and WebRTC signaling
-data.
-
-The protected `/dates` page lets connected users propose a future date with a
-UTC-backed time, location, and optional note. The recipient can accept or
-decline, either participant can cancel a pending or accepted future date, and
-old proposals remain visible as history. New or changed proposals create a
-persisted `date` notification and a real-time update.
-
-### Date endpoints
-
-```text
-GET  /api/dates
-POST /api/dates/<user_id>
-PUT  /api/dates/<event_id>/respond
-PUT  /api/dates/<event_id>/cancel
-```
-
-### Audio-call Socket.IO events
-
-Received by the backend:
-
-```text
-call_start
-call_accept
-call_decline
-call_signal
-call_end
-```
-
-Emitted by the backend:
-
-```text
-call_incoming
-call_accepted
-call_declined
-call_signal
-call_ended
-date_event
-```
-
-The schema update is non-destructive. Running `./start.sh` creates the new
-`date_events` table and expands the notification-type constraint before the
-fixed 500-profile seed and application services start.
+- complete browser scenarios;
+- successful and failed API cases;
+- cookie and CSRF behavior;
+- two-user chat, notification, call, and date testing;
+- upload security tests;
+- PostgreSQL integrity checks;
+- instructions for importing and using the Postman collection.

@@ -48,6 +48,7 @@ interface CallSignalPayload {
 
 const AudioCallContext = createContext<CallContextValue | null>(null);
 
+/** Manage global audio-only WebRTC calls and Socket.IO signaling. */
 export function AudioCallProvider({
   children,
 }: {
@@ -366,6 +367,8 @@ export function AudioCallProvider({
       return;
     }
 
+    /** Update the displayed call duration from the established connection time. */
+
     const updateElapsed = () => {
       setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
     };
@@ -383,6 +386,8 @@ export function AudioCallProvider({
       return;
     }
 
+    /** Validate an incoming invitation and expose it through the global call overlay. */
+
     const onIncoming = (payload: IncomingCallPayload) => {
       if (phaseRef.current !== 'idle') {
         socket.emit('call_decline', { callId: payload.callId });
@@ -394,6 +399,8 @@ export function AudioCallProvider({
       updateDirection('incoming');
       updatePhase('incoming');
     };
+
+    /** Continue caller-side WebRTC negotiation after the recipient accepts. */
 
     const onAccepted = async (payload: { callId: string }) => {
       if (payload.callId !== callIdRef.current) {
@@ -429,11 +436,15 @@ export function AudioCallProvider({
       }
     };
 
+    /** Close the outgoing-call state when the recipient declines or is busy. */
+
     const onDeclined = (payload: { callId: string }) => {
       if (payload.callId === callIdRef.current) {
         resetCall('The audio call was declined.');
       }
     };
+
+    /** Release audio resources when the backend reports that a call has ended. */
 
     const onEnded = (payload: { callId: string; reason?: string }) => {
       if (payload.callId !== callIdRef.current) {
@@ -448,6 +459,8 @@ export function AudioCallProvider({
       };
       resetCall(messages[payload.reason || ''] || undefined);
     };
+
+    /** Forward validated SDP or ICE signaling data to the active peer connection. */
 
     const onSignal = async (payload: CallSignalPayload) => {
       if (
@@ -619,6 +632,7 @@ export function AudioCallProvider({
   );
 }
 
+/** Render a safe fallback avatar for the other call participant. */
 function CallAvatar({
   user,
   compact = false,
@@ -645,12 +659,14 @@ function CallAvatar({
   );
 }
 
+/** Format elapsed call seconds as minutes and seconds. */
 function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/** Expose the audio-call controller to protected pages. */
 export function useAudioCall() {
   const context = useContext(AudioCallContext);
   if (!context) {

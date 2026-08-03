@@ -12,6 +12,7 @@ import {
 
 import { useAuth } from '@/app/context/AuthContext';
 
+/** Complete the cookie-based OAuth return flow and route the user safely. */
 function OAuthCallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
@@ -49,14 +50,15 @@ function OAuthCallbackContent() {
     router,
   ]);
 
-  return <div className="min-h-screen bg-[#15101C]" />;
+  return <div className="min-h-[calc(100vh-8rem)] bg-[#15101C]" />;
 }
 
+/** Render this application route and delegate its feature logic to the page component. */
 export default function OAuthCallbackPage() {
   return (
     <Suspense
       fallback={(
-        <div className="min-h-screen bg-[#15101C]" />
+        <div className="min-h-[calc(100vh-8rem)] bg-[#15101C]" />
       )}
     >
       <OAuthCallbackContent />

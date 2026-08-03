@@ -1,11 +1,12 @@
+"""Authentication routes for registration, verification, sessions, logout, and password recovery."""
+
 from datetime import datetime
 
 import psycopg2
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
-    get_jwt_identity,
     jwt_required,
     set_access_cookies,
     verify_jwt_in_request,
@@ -17,6 +18,7 @@ from flask_jwt_extended.exceptions import JWTExtendedException
 from jwt.exceptions import PyJWTError
 
 from app import models
+from app.request_helpers import get_authenticated_user, json_object
 from app.utils import (
     send_password_reset_email,
     send_verification_email,
@@ -38,19 +40,8 @@ _NEUTRAL_VERIFICATION_MESSAGE = (
 _NEUTRAL_RESET_MESSAGE = 'Password reset email sent if account exists'
 
 
-def get_current_user_or_404():
-    """Helper: resolve the JWT identity (always a string) back to a user row."""
-    user_id = get_jwt_identity()
-    if user_id is None:
-        return None
-
-    try:
-        return models.get_user_by_id(int(user_id))
-    except (TypeError, ValueError):
-        return None
-
-
 def attach_session_cookies(response, user):
+    """Set access and refresh JWT cookies on an authentication response."""
     expires_at = datetime.utcnow() + current_app.config['JWT_REFRESH_TOKEN_EXPIRES']
     session_id = models.create_session(user['id'], expires_at)
     access_token, refresh_token = models.get_tokens_for_user(user, session_id)
@@ -60,15 +51,9 @@ def attach_session_cookies(response, user):
     return response
 
 
-def json_object():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None
-    return data
-
-
 @auth_bp.route('/refresh/bootstrap', methods=['POST'])
 def bootstrap_session():
+    """Restore an authenticated browser session without producing an expected 401 probe."""
     try:
         verify_jwt_in_request(refresh=True)
     except (JWTExtendedException, PyJWTError):
@@ -79,7 +64,7 @@ def bootstrap_session():
         unset_jwt_cookies(response)
         return response, 200
 
-    user = get_current_user_or_404()
+    user = get_authenticated_user()
     if not user:
         response = jsonify({
             'authenticated': False,
@@ -110,7 +95,8 @@ def bootstrap_session():
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    user = get_current_user_or_404()
+    """Return the private profile for the authenticated session."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
     return jsonify({'user': models.user_to_dict(user, include_private=True)}), 200
@@ -118,6 +104,7 @@ def get_current_user():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    """Validate registration data, create the account, and send verification email."""
     registration, error = validate_registration_data(json_object())
     if error:
         return jsonify({'message': error}), 400
@@ -153,6 +140,7 @@ def register():
 
 @auth_bp.route('/verify/<token>', methods=['GET'])
 def verify_email(token):
+    """Verify a unique email token and activate the account."""
     payload, reason = verify_verification_token(token)
     if not payload:
         message = (
@@ -176,6 +164,7 @@ def verify_email(token):
 
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
+    """Issue a new verification email without exposing account existence."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -196,6 +185,7 @@ def resend_verification():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
+    """Authenticate credentials and create a revocable server-side session."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -225,7 +215,8 @@ def login():
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
-    user = get_current_user_or_404()
+    """Rotate an active refresh session and return fresh authentication cookies."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -248,6 +239,7 @@ def refresh():
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
+    """Revoke the current session and clear all authentication cookies."""
     session_id = get_jwt().get('sid')
     models.revoke_session(session_id)
 
@@ -261,6 +253,7 @@ def logout():
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
+    """Send a reset link while returning the same response for unknown addresses."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -281,6 +274,7 @@ def forgot_password():
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
+    """Validate a reset token, replace the password, and revoke old sessions."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -333,6 +327,7 @@ def reset_password():
 
 @auth_bp.route('/verify-reset-token/<token>', methods=['GET'])
 def verify_reset_token_route(token):
+    """Check whether a password-reset token remains valid."""
     payload, reason = verify_reset_token(token)
     if not payload:
         return jsonify({'valid': False, 'reason': reason}), 400

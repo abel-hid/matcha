@@ -1,6 +1,6 @@
+import DiscoverPage from './DiscoverPage';
 
-import Dashboard from './Dashboard';
-
+/** Render suggested profiles and advanced search at the application home route. */
 export default function HomePage() {
-  return <Dashboard />;
+  return <DiscoverPage />;
 }

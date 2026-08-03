@@ -1,6 +1,6 @@
 """
-Every query below uses %s placeholders with parameters passed as a tuple —
-never string formatting — so this is not vulnerable to SQL injection.
+Every query below uses %s placeholders with parameters passed as a tuple -
+never string formatting - so this is not vulnerable to SQL injection.
 """
 import psycopg2
 import psycopg2.pool
@@ -12,17 +12,21 @@ from app.config import Config
 _pool = None
 
 
-def init_pool(database_url=None):
+def init_pool(database_url=None, minimum=None, maximum=None):
+    """Create the process-wide thread-safe PostgreSQL connection pool once."""
     global _pool
     if _pool is None:
-        _pool = psycopg2.pool.SimpleConnectionPool(
-            minconn=1, maxconn=20, dsn=database_url or Config.DATABASE_URL
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=minimum or Config.DB_POOL_MIN,
+            maxconn=maximum or Config.DB_POOL_MAX,
+            dsn=database_url or Config.DATABASE_URL,
         )
     return _pool
 
 
 @contextmanager
 def get_conn():
+    """Borrow a pooled connection and always commit, rollback, and return it safely."""
     p = init_pool()
     conn = p.getconn()
     try:

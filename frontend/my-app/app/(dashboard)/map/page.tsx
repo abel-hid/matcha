@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { apiErrorMessage, errorCode } from '@/app/lib/apiError';
 import UserMap from '@/app/components/UserMap';
 import { discoverService, profileService } from '@/app/services/api';
 import type {
@@ -23,6 +24,7 @@ const DEFAULT_FILTERS: DiscoverFilters = {
   order: 'asc',
 };
 
+/** Load privacy-rounded compatible profiles and render the interactive user map. */
 export default function MapPage() {
   const [draftFilters, setDraftFilters] = useState(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
@@ -48,26 +50,24 @@ export default function MapPage() {
     discoverService
       .getMapProfiles(appliedFilters)
       .then((data: MapResponse) => setMapData(data))
-      .catch((requestError: any) => {
+      .catch((requestError: unknown) => {
         setMapData(null);
         setError(
-          requestError.response?.data?.message
-          || 'The user map could not be loaded.'
+          apiErrorMessage(requestError, 'The user map could not be loaded.')
         );
       })
       .finally(() => setLoading(false));
   }, [appliedFilters, reloadVersion]);
 
-  const updateNumber = (
-    field: 'minAge' | 'maxAge' | 'minFame' | 'maxFame',
-    value: string,
-  ) => {
+  /** Update one numeric map filter while retaining the remaining filter draft. */
+  const updateNumber = (field: 'minAge' | 'maxAge' | 'minFame' | 'maxFame', value: string) => {
     setDraftFilters((current) => ({
       ...current,
       [field]: Number(value),
     }));
   };
 
+  /** Toggle an interest tag used to filter map markers. */
   const toggleTag = (tagId: number) => {
     setDraftFilters((current) => ({
       ...current,
@@ -77,6 +77,7 @@ export default function MapPage() {
     }));
   };
 
+  /** Apply the current map filters and request a fresh marker set. */
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFilterError('');
@@ -105,6 +106,7 @@ export default function MapPage() {
     });
   };
 
+  /** Request explicit GPS consent and refresh markers around the saved position. */
   const usePreciseGps = async () => {
     if (!gpsConsent) {
       setError('Confirm GPS consent before requesting your location.');
@@ -134,13 +136,11 @@ export default function MapPage() {
         position.coords.longitude,
       );
       setReloadVersion((value) => value + 1);
-    } catch (locationError: any) {
-      if (locationError?.code === 1) {
+    } catch (locationError: unknown) {
+      if (errorCode(locationError) === 1) {
         setError('Location permission was denied. Allow it in the browser or use a manual location from your profile.');
-      } else if (locationError?.response?.data?.message) {
-        setError(locationError.response.data.message);
       } else {
-        setError('Your current location could not be obtained.');
+        setError(apiErrorMessage(locationError, 'Your current location could not be obtained.'));
       }
     } finally {
       setLocating(false);
@@ -282,6 +282,7 @@ export default function MapPage() {
   );
 }
 
+/** Render a controlled numeric filter input. */
 function NumberField({
   label,
   value,

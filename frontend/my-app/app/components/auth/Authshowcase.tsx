@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 
 interface AuthShowcaseProps {
   eyebrow: string;
@@ -23,6 +22,7 @@ const LINKS: [number, number][] = [
 
 const PULSE_INDICES = [1, 4, 7, 10];
 
+/** Render the shared visual introduction used by authentication pages. */
 export default function AuthShowcase({ eyebrow, headline, subhead }: AuthShowcaseProps) {
   return (
     <div className="relative hidden lg:flex lg:w-[44%] flex-col justify-between overflow-hidden bg-[#15101C] px-12 py-14">

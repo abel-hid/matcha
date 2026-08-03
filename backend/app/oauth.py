@@ -1,3 +1,5 @@
+"""Google and 42 OAuth state, provider exchange, account linking, and login completion."""
+
 import secrets
 import time
 from urllib.parse import urlencode
@@ -15,27 +17,33 @@ oauth_bp = Blueprint('oauth', __name__, url_prefix='/api/auth/oauth')
 
 
 class OAuthProviderError(RuntimeError):
+    """Carry a safe public reason for an upstream OAuth provider failure."""
     def __init__(self, reason):
+        """Store the public OAuth failure reason returned to the callback handler."""
         super().__init__(reason)
         self.reason = reason
 
 
 def finish_login(user):
+    """Create a normal cookie session after successful OAuth authentication."""
     frontend_url = current_app.config['FRONTEND_URL']
     response = redirect(f'{frontend_url}/oauth-callback')
     return attach_session_cookies(response, user)
 
 
 def redirect_with_error(reason):
+    """Redirect to login with a controlled OAuth error code."""
     frontend_url = current_app.config['FRONTEND_URL']
     return redirect(f'{frontend_url}/login?error={reason}')
 
 
 def oauth_not_configured(provider):
+    """Return a controlled service-unavailable response for a disabled provider."""
     return jsonify({'message': f'{provider} OAuth is not configured'}), 503
 
 
 def provider_config(provider):
+    """Return URLs and credentials for one supported OAuth provider."""
     if provider == '42':
         return {
             'label': '42',
@@ -56,6 +64,7 @@ def provider_config(provider):
 
 
 def create_oauth_state(provider):
+    """Create and store a short-lived state token against login CSRF."""
     value = secrets.token_urlsafe(32)
     session[f'oauth_state_{provider}'] = {
         'value': value,
@@ -65,6 +74,7 @@ def create_oauth_state(provider):
 
 
 def validate_oauth_state(provider):
+    """Validate and consume the provider callback state token once."""
     supplied_state = request.args.get('state', '')
     stored_state = session.pop(f'oauth_state_{provider}', None)
 
@@ -84,6 +94,7 @@ def validate_oauth_state(provider):
 
 
 def request_provider_json(method, url, *, data=None, headers=None):
+    """Call a provider with timeout and normalized upstream failures."""
     try:
         response = requests.request(
             method,
@@ -108,6 +119,7 @@ def request_provider_json(method, url, *, data=None, headers=None):
 
 
 def exchange_access_token(provider, code):
+    """Exchange an authorization code for a provider access token."""
     config = provider_config(provider)
 
     if provider == '42':
@@ -134,6 +146,7 @@ def exchange_access_token(provider, code):
 
 
 def fetch_provider_profile(provider, access_token):
+    """Fetch the authenticated provider profile."""
     if provider == '42':
         return request_provider_json(
             'GET',
@@ -149,6 +162,7 @@ def fetch_provider_profile(provider, access_token):
 
 
 def clean_name(value, fallback):
+    """Normalize a provider name and apply a safe fallback when absent."""
     if isinstance(value, str):
         cleaned = ' '.join(value.strip().split())[:50]
         if cleaned:
@@ -157,6 +171,7 @@ def clean_name(value, fallback):
 
 
 def normalize_provider_profile(provider, profile):
+    """Normalize Google or 42 profile fields into the local account shape."""
     if provider == '42':
         oauth_id = profile.get('id')
         raw_email = profile.get('email')
@@ -198,14 +213,8 @@ def normalize_provider_profile(provider, profile):
     }
 
 
-def resolve_user(
-    provider,
-    oauth_id,
-    email,
-    first_name,
-    last_name,
-    preferred_username,
-):
+def resolve_user(provider, oauth_id, email, first_name, last_name, preferred_username):
+    """Login, link, or create the local account represented by an OAuth identity."""
     user = models.get_user_by_oauth(provider, oauth_id)
     if user:
         return finish_login(user)
@@ -240,6 +249,7 @@ def resolve_user(
 
 
 def complete_callback(provider):
+    """Complete one OAuth callback and redirect with a secure cookie session."""
     config = provider_config(provider)
     if not all([
         config['client_id'],
@@ -272,6 +282,7 @@ def complete_callback(provider):
 
 @oauth_bp.route('/42/login')
 def fortytwo_login():
+    """Start the 42 authorization flow with a short-lived state token."""
     config = provider_config('42')
     if not config['client_id'] or not config['redirect_uri']:
         return oauth_not_configured(config['label'])
@@ -289,6 +300,7 @@ def fortytwo_login():
 
 @oauth_bp.route('/42/callback')
 def fortytwo_callback():
+    """Complete the 42 callback through the shared provider flow."""
     return complete_callback('42')
 
 
@@ -296,6 +308,7 @@ def fortytwo_callback():
 
 @oauth_bp.route('/google/login')
 def google_login():
+    """Start the Google authorization flow with a short-lived state token."""
     config = provider_config('google')
     if not config['client_id'] or not config['redirect_uri']:
         return oauth_not_configured(config['label'])
@@ -315,4 +328,5 @@ def google_login():
 
 @oauth_bp.route('/google/callback')
 def google_callback():
+    """Complete the Google callback through the shared provider flow."""
     return complete_callback('google')

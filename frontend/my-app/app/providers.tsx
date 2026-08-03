@@ -3,12 +3,11 @@
 import { AudioCallProvider } from '@/app/components/AudioCallProvider';
 import { NotificationProvider } from '@/app/components/NotificationBell';
 
-export function Providers({ children }: { children: React.ReactNode }) {
+/** Compose global client providers once so every authenticated page receives live events. */
+export function Providers({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <NotificationProvider>
-      <AudioCallProvider>
-        {children}
-      </AudioCallProvider>
+      <AudioCallProvider>{children}</AudioCallProvider>
     </NotificationProvider>
   );
 }

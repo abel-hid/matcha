@@ -1,3 +1,5 @@
+"""Socket.IO presence, conversation state, notifications, and audio-call signaling."""
+
 from collections import defaultdict
 from threading import Lock
 from uuid import uuid4
@@ -6,7 +8,7 @@ from flask import current_app, request
 from flask_jwt_extended import decode_token
 from flask_socketio import SocketIO, disconnect, join_room
 
-socketio = SocketIO(cors_allowed_origins="*")
+socketio = SocketIO(async_mode='threading')
 
 _lock = Lock()
 _user_connections = defaultdict(set)      # user_id -> {sid, sid, ...}
@@ -24,6 +26,7 @@ CALL_ICE_CANDIDATE_MAX_LENGTH = 4_096
 
 
 def _authenticated_socket_session():
+    """Authenticate the Socket.IO handshake from HttpOnly JWT cookies."""
     cookie_name = current_app.config.get('JWT_ACCESS_COOKIE_NAME', 'access_token_cookie')
     token = request.cookies.get(cookie_name)
     if not token:
@@ -53,6 +56,7 @@ def _authenticated_socket_session():
 
 
 def disconnect_session(session_id):
+    """Disconnect every socket associated with a revoked authentication session."""
     with _lock:
         socket_ids = list(_session_connections.get(session_id, set()))
 
@@ -61,6 +65,7 @@ def disconnect_session(session_id):
 
 
 def disconnect_user(user_id):
+    """Disconnect all tabs currently connected for one user."""
     with _lock:
         socket_ids = list(_user_connections.get(user_id, set()))
 
@@ -99,6 +104,7 @@ def handle_connect(auth):
 
 @socketio.on('disconnect')
 def handle_disconnect():
+    """Remove one socket and update final-tab presence and active calls."""
     sid = request.sid
 
     with _lock:
@@ -131,13 +137,8 @@ def handle_disconnect():
         end_user_call(user_id, 'disconnected')
 
 
-def emit_conversation_status(
-    user_a_id,
-    user_b_id,
-    can_message,
-    reason,
-    actor_id,
-):
+def emit_conversation_status(user_a_id, user_b_id, can_message, reason, actor_id):
+    """Tell both users when a relationship change enables or disables chat."""
     socketio.emit(
         'conversation_status',
         {
@@ -161,11 +162,13 @@ def emit_conversation_status(
 
 
 def _socket_user_id():
+    """Return the authenticated user identifier associated with the current socket."""
     with _lock:
         return _sid_to_user.get(request.sid)
 
 
 def _socket_id():
+    """Return the current Socket.IO connection identifier."""
     try:
         return request.sid
     except RuntimeError:
@@ -173,6 +176,7 @@ def _socket_id():
 
 
 def _call_user_payload(user_id):
+    """Serialize the minimal public identity shown in call controls."""
     from app import models
 
     user = models.get_user_by_id(user_id)
@@ -194,6 +198,7 @@ def _call_user_payload(user_id):
 
 
 def _other_call_user(call, user_id):
+    """Return the opposite participant identifier for a call."""
     if call['caller_id'] == user_id:
         return call['recipient_id']
     if call['recipient_id'] == user_id:
@@ -202,6 +207,7 @@ def _other_call_user(call, user_id):
 
 
 def _remove_call(call_id):
+    """Remove a call and both participant indexes under the call lock."""
     with _call_lock:
         call = _calls.pop(call_id, None)
         if not call:
@@ -212,6 +218,7 @@ def _remove_call(call_id):
 
 
 def _emit_call_end(call, reason, ended_by=None):
+    """Emit a consistent call termination reason to both participants."""
     payload = {
         'callId': call['id'],
         'reason': reason,
@@ -230,6 +237,7 @@ def _emit_call_end(call, reason, ended_by=None):
 
 
 def end_socket_call(socket_id, user_id, reason='ended'):
+    """End the call owned by a closing browser tab."""
     with _call_lock:
         call_id = _user_calls.get(user_id)
         call = _calls.get(call_id) if call_id else None
@@ -255,6 +263,7 @@ def end_socket_call(socket_id, user_id, reason='ended'):
 
 
 def end_user_call(user_id, reason='ended'):
+    """End any active call involving a user."""
     with _call_lock:
         call_id = _user_calls.get(user_id)
     if not call_id:
@@ -269,6 +278,7 @@ def end_user_call(user_id, reason='ended'):
 
 
 def end_calls_between(user_a_id, user_b_id, reason):
+    """End active calls between two users after unlike or block."""
     with _call_lock:
         call_id = _user_calls.get(user_a_id)
         call = _calls.get(call_id) if call_id else None
@@ -287,6 +297,7 @@ def end_calls_between(user_a_id, user_b_id, reason):
 
 
 def _call_relationship_allowed(user_a_id, user_b_id):
+    """Verify both profiles remain complete, connected, and non-blocked."""
     from app import models
 
     if user_a_id == user_b_id:
@@ -301,6 +312,7 @@ def _call_relationship_allowed(user_a_id, user_b_id):
 
 
 def _call_id_from_data(data):
+    """Validate and normalize a call identifier from a socket payload."""
     if not isinstance(data, dict):
         return None
 
@@ -315,6 +327,7 @@ def _call_id_from_data(data):
 
 
 def _valid_call_signal(signal_type, signal):
+    """Validate bounded WebRTC SDP or ICE signaling data."""
     if not isinstance(signal_type, str) or not isinstance(signal, dict):
         return False
 
@@ -338,6 +351,7 @@ def _valid_call_signal(signal_type, signal):
 
 @socketio.on('call_start')
 def handle_call_start(data):
+    """Authorize and send an audio-call invitation to a connected user."""
     caller_id = _socket_user_id()
     if caller_id is None:
         return {'ok': False, 'message': 'Unauthorized'}
@@ -399,6 +413,7 @@ def handle_call_start(data):
 
 @socketio.on('call_accept')
 def handle_call_accept(data):
+    """Accept a ringing call from the invited participant."""
     user_id = _socket_user_id()
     call_id = _call_id_from_data(data)
     if call_id is None:
@@ -449,6 +464,7 @@ def handle_call_accept(data):
 
 @socketio.on('call_decline')
 def handle_call_decline(data):
+    """Decline a ringing call and notify its caller."""
     user_id = _socket_user_id()
     call_id = _call_id_from_data(data)
     if call_id is None:
@@ -482,6 +498,7 @@ def handle_call_decline(data):
 
 @socketio.on('call_signal')
 def handle_call_signal(data):
+    """Relay validated WebRTC signaling only between call participants."""
     user_id = _socket_user_id()
     if user_id is None or not isinstance(data, dict):
         return {'ok': False, 'message': 'Unauthorized'}
@@ -520,6 +537,7 @@ def handle_call_signal(data):
 
 @socketio.on('call_end')
 def handle_call_end(data):
+    """End an owned call from either participant."""
     user_id = _socket_user_id()
     call_id = _call_id_from_data(data)
     if call_id is None:

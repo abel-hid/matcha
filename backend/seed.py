@@ -8,7 +8,7 @@ The root Docker startup executes this command automatically:
 The script has no command-line options and always creates exactly 500 profiles.
 
 The command preserves non-seed accounts, replaces accounts whose usernames
-start with ``seed_``, and creates at least 500 verified, complete profiles.
+start with ``seed_``, and creates exactly 500 verified, complete profiles.
 """
 import random
 import sys
@@ -30,7 +30,7 @@ UPLOAD_FOLDER = Path(Config.UPLOAD_FOLDER)
 
 SEED_PROFILE_COUNT = 500
 SEED_RANDOM_VALUE = 20260801
-SEED_PASSWORD = 'lhfTYh6452fdHH9'
+SEED_PASSWORD = 'lhfTYh6452fdHH9@'
 SEED_FILE_PREFIX = 'seed_profile_'
 
 GENDERS = ('male', 'female', 'non-binary')
@@ -90,44 +90,59 @@ BIOGRAPHY_TEMPLATES = (
 )
 
 LOCATIONS = (
-    ('Agdal, Rabat', 33.9904, -6.8480),
-    ('Hay Riad, Rabat', 33.9564, -6.8671),
-    ('Hassan, Rabat', 34.0209, -6.8277),
-    ('Medina, Rabat', 34.0259, -6.8361),
-    ('Maarif, Casablanca', 33.5858, -7.6327),
-    ('Ain Diab, Casablanca', 33.5922, -7.6767),
-    ('Gauthier, Casablanca', 33.5911, -7.6273),
-    ('Sidi Maarouf, Casablanca', 33.5299, -7.6461),
-    ('Gueliz, Marrakech', 31.6341, -8.0117),
-    ('Medina, Marrakech', 31.6295, -7.9811),
-    ('Hivernage, Marrakech', 31.6218, -8.0097),
-    ('Charaf, Agadir', 30.4317, -9.5797),
-    ('Talborjt, Agadir', 30.4220, -9.5912),
-    ('Malabata, Tangier', 35.7896, -5.7659),
-    ('Bni Makada, Tangier', 35.7511, -5.8188),
-    ('City Center, Tangier', 35.7795, -5.8128),
-    ('Hamria, Meknes', 33.8951, -5.5473),
-    ('Ville Nouvelle, Fes', 34.0349, -5.0026),
-    ('Medina, Tetouan', 35.5711, -5.3684),
-    ('City Center, Oujda', 34.6814, -1.9086),
+    ('Agdal, Rabat', 33.9820, 34.0000, -6.8600, -6.8400),
+    ('Hay Riad, Rabat', 33.9480, 33.9650, -6.8800, -6.8500),
+    ('Hassan, Rabat', 34.0150, 34.0280, -6.8400, -6.8200),
+    ('Medina, Rabat', 34.0200, 34.0300, -6.8450, -6.8300),
+    ('Maarif, Casablanca', 33.5780, 33.5920, -7.6450, -7.6200),
+    ('Ain Diab, Casablanca', 33.5840, 33.5950, -7.6600, -7.6350),
+    ('Gauthier, Casablanca', 33.5850, 33.5950, -7.6350, -7.6200),
+    ('Sidi Maarouf, Casablanca', 33.5200, 33.5400, -7.6600, -7.6300),
+    ('Gueliz, Marrakech', 31.6250, 31.6400, -8.0200, -8.0000),
+    ('City Center, Khouribga', 32.8750, 32.8950, -6.9250, -6.8950),
+    ('Medina, Marrakech', 31.6200, 31.6350, -7.9950, -7.9750),
+    ('Hivernage, Marrakech', 31.6150, 31.6280, -8.0200, -8.0000),
+    ('Charaf, Agadir', 30.4250, 30.4380, -9.5900, -9.5700),
+    ('Talborjt, Agadir', 30.4170, 30.4280, -9.6000, -9.5800),
+    ('Malabata, Tangier', 35.7800, 35.7920, -5.7800, -5.7500),
+    ('Bni Makada, Tangier', 35.7420, 35.7600, -5.8300, -5.8000),
+    ('City Center, Tangier', 35.7700, 35.7850, -5.8250, -5.8000),
+    ('Hamria, Meknes', 33.8880, 33.9020, -5.5550, -5.5350),
+    ('Ville Nouvelle, Fes', 34.0280, 34.0420, -5.0150, -4.9950),
+    ('Medina, Tetouan', 35.5650, 35.5780, -5.3800, -5.3550),
+    ('City Center, Oujda', 34.6750, 34.6880, -1.9200, -1.8950),
+    ('Eixample, Barcelona', 41.3820, 41.3980, 2.1600, 2.1800),
+    ('Centro, Madrid', 40.4120, 40.4250, -3.7100, -3.6950),
+    ('11th Arrondissement, Paris', 48.8500, 48.8650, 2.3700, 2.3900),
+    ('Mitte, Berlin', 52.5150, 52.5300, 13.3900, 13.4150),
+    ('Navigli, Milan', 45.4450, 45.4600, 9.1650, 9.1900),
+    ('Downtown, Cairo', 30.0350, 30.0550, 31.2250, 31.2450),
+    ('Plateau, Dakar', 14.6600, 14.6750, -17.4450, -17.4250),
+    ('Downtown, Montreal', 45.4950, 45.5100, -73.5800, -73.5550),
+    ('Palermo, Buenos Aires', -34.5950, -34.5750, -58.4350, -58.4050),
+    ('Shibuya, Tokyo', 35.6520, 35.6660, 139.6950, 139.7150),
+    ('Gangnam, Seoul', 37.4900, 37.5050, 127.0200, 127.0450),
+    ('CBD, Sydney', -33.8750, -33.8600, 151.2000, 151.2200),
 )
 
-PHOTO_PALETTE = (
-    ((255, 77, 126), (30, 23, 40)),
-    ((242, 200, 121), (38, 30, 48)),
-    ((90, 188, 216), (22, 32, 46)),
-    ((126, 217, 155), (24, 38, 35)),
-    ((177, 131, 255), (31, 24, 45)),
-    ((255, 151, 91), (44, 29, 25)),
+PHOTO_COLORS = (
+    (255, 77, 126),
+    (242, 200, 121),
+    (90, 188, 216),
+    (126, 217, 155),
+    (177, 131, 255),
+    (255, 151, 91),
+    (75, 123, 236),
+    (236, 90, 117),
 )
-
-
 
 def username_for(index):
+    """Return the stable seed username for one one-based index."""
     return f'seed_{index:03d}'
 
 
 def birth_date_for_age(age, rng, today=None):
+    """Build a deterministic birth date for the requested age."""
     today = today or date.today()
     month = rng.randint(1, 12)
 
@@ -145,6 +160,7 @@ def birth_date_for_age(age, rng, today=None):
 
 
 def build_seed_profiles(count, random_seed=SEED_RANDOM_VALUE):
+    """Build deterministic complete profile values for all 500 seed users."""
     rng = random.Random(random_seed)
     today = date.today()
     profiles = []
@@ -157,11 +173,11 @@ def build_seed_profiles(count, random_seed=SEED_RANDOM_VALUE):
         birth_date = birth_date_for_age(age, rng, today=today)
         gender = GENDERS[(index - 1) % len(GENDERS)]
         preferences = list(PREFERENCE_OPTIONS[(index - 1) % len(PREFERENCE_OPTIONS)])
-        location_name, base_latitude, base_longitude = LOCATIONS[
+        location_name, min_latitude, max_latitude, min_longitude, max_longitude = LOCATIONS[
             (index - 1) % len(LOCATIONS)
         ]
-        latitude = round(base_latitude + rng.uniform(-0.018, 0.018), 6)
-        longitude = round(base_longitude + rng.uniform(-0.018, 0.018), 6)
+        latitude = round(rng.uniform(min_latitude, max_latitude), 6)
+        longitude = round(rng.uniform(min_longitude, max_longitude), 6)
         tag_count = 2 + (index % 6)
         tag_names = rng.sample(list(TAG_NAMES), tag_count)
         biography = BIOGRAPHY_TEMPLATES[(index - 1) % len(BIOGRAPHY_TEMPLATES)].format(
@@ -202,6 +218,7 @@ def build_seed_profiles(count, random_seed=SEED_RANDOM_VALUE):
 
 
 def build_like_pairs(user_ids):
+    """Build deterministic directional likes and mutual matches."""
     count = len(user_ids)
     likes = set()
 
@@ -225,6 +242,7 @@ def build_like_pairs(user_ids):
 
 
 def build_view_rows(user_ids, usernames, random_seed=SEED_RANDOM_VALUE):
+    """Build deterministic profile visit history."""
     rng = random.Random(random_seed + 99)
     count = len(user_ids)
     rows = []
@@ -259,50 +277,14 @@ def build_view_rows(user_ids, usernames, random_seed=SEED_RANDOM_VALUE):
 
 
 def render_seed_photo(profile, photo_number, destination):
-    width = 360
-    height = 360
-    foreground, background = PHOTO_PALETTE[
-        (profile['index'] + photo_number - 2) % len(PHOTO_PALETTE)
-    ]
-    image = Image.new('RGB', (width, height), background)
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-
-    stripe_width = 45 + ((profile['index'] * 3 + photo_number * 11) % 70)
-    draw.rectangle(
-        (0, 0, stripe_width, height),
-        fill=foreground,
-    )
-    draw.ellipse(
-        (
-            120 - photo_number * 5,
-            60 + photo_number * 4,
-            330 - photo_number * 3,
-            270 + photo_number * 7,
-        ),
-        fill=foreground,
-    )
-    draw.rectangle(
-        (35, 285, 325, 335),
-        fill=background,
-    )
-
-    initials = (
-        f"{profile['first_name'][:1]}"
-        f"{profile['last_name'][:1]}"
-    ).upper()
-    label = f"{initials}  {profile['username']}  #{photo_number}"
-    draw.text(
-        (55, 304),
-        label,
-        fill=(245, 239, 233),
-        font=font,
-    )
-
-    image.save(destination, format='PNG', optimize=True)
+    """Create one plain solid-color square image for a seed profile."""
+    rng = random.Random(SEED_RANDOM_VALUE + profile['index'] + photo_number)
+    color = rng.choice(PHOTO_COLORS)
+    Image.new('RGB', (360, 360), color).save(destination, format='PNG')
 
 
 def prepare_seed_photos(profiles, directory):
+    """Generate seed photos in a staging directory before database writes."""
     photo_rows = []
     filenames = set()
 
@@ -326,6 +308,7 @@ def prepare_seed_photos(profiles, directory):
 
 
 def remove_unused_seed_photos(expected_filenames):
+    """Remove obsolete generated photos after reseeding."""
     if not UPLOAD_FOLDER.exists():
         return
 
@@ -335,6 +318,7 @@ def remove_unused_seed_photos(expected_filenames):
 
 
 def install_seed_photos(source_directory, expected_filenames):
+    """Move staged seed photos into persistent upload storage."""
     UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
     for filename in expected_filenames:
@@ -350,6 +334,7 @@ def install_seed_photos(source_directory, expected_filenames):
 
 
 def load_tag_ids(cursor):
+    """Load every fixed tag identifier and fail if schema setup is incomplete."""
     cursor.execute(
         'SELECT id, name FROM tags WHERE name = ANY(%s::TEXT[])',
         (list(TAG_NAMES),),
@@ -366,6 +351,7 @@ def load_tag_ids(cursor):
 
 
 def insert_seed_data(profiles, photo_rows):
+    """Replace seed accounts and related rows in one database transaction."""
     Config.validate_database()
     password_hash = bcrypt.hashpw(
         SEED_PASSWORD.encode('utf-8'),
@@ -623,6 +609,7 @@ def insert_seed_data(profiles, photo_rows):
 
 
 def seed_database():
+    """Generate and install the exact 500-profile evaluation dataset."""
     profiles = build_seed_profiles(
         SEED_PROFILE_COUNT,
         random_seed=SEED_RANDOM_VALUE,
@@ -643,6 +630,7 @@ def seed_database():
 
 
 def main():
+    """Run the deterministic seed command and print a concise result."""
     if len(sys.argv) != 1:
         raise SystemExit(
             'seed.py does not accept arguments; it always creates exactly 500 profiles'

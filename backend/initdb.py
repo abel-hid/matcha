@@ -21,6 +21,7 @@ SCHEMA_FILE = BASE_DIR / 'schema.sql'
 
 
 def parse_arguments():
+    """Parse the explicit destructive-reset option for schema setup."""
     parser = argparse.ArgumentParser(description='Apply the Matcha database schema.')
     parser.add_argument(
         '--reset',
@@ -31,6 +32,7 @@ def parse_arguments():
 
 
 def apply_schema(reset=False):
+    """Optionally reset the public schema and apply schema.sql atomically."""
     Config.validate_database()
     schema_sql = SCHEMA_FILE.read_text(encoding='utf-8')
 

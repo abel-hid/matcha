@@ -20,6 +20,7 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
+/** Enforce authentication and profile completion while providing responsive navigation. */
 export default function AppLayout({ children }: AppLayoutProps) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
@@ -43,6 +44,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setMobileOpen(false);
   }, [pathname]);
 
+  /** End the authenticated session before returning the browser to the login page. */
   const handleLogout = async () => {
     setLogoutError('');
     try {
@@ -88,6 +90,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <main className="flex-1">
           {pathname === '/profile' ? children : <div className="min-h-screen bg-[#15101C]" />}
         </main>
+
+        <footer className="border-t border-[#332844] px-6 py-5 text-center text-xs text-[#6E6180]">
+          <span>&copy; {new Date().getFullYear()} Matcha</span>
+        </footer>
       </div>
     );
   }

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { profileService } from '@/app/services/api';
 import type { User } from '@/app/types';
 
@@ -22,6 +23,7 @@ interface ProfileLocationProps {
   onChange: (profile: User) => void;
 }
 
+/** Handle explicit GPS consent, permission diagnostics, and manual location fallback. */
 export default function ProfileLocation({ location, gpsConsent, onChange }: ProfileLocationProps) {
   const [consentChecked, setConsentChecked] = useState(gpsConsent);
   const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
@@ -39,6 +41,8 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
 
   useEffect(() => {
     let permissionStatus: PermissionStatus | null = null;
+
+    /** Read the browser geolocation permission state when that API is available. */
 
     const loadPermission = async () => {
       if (!navigator.permissions?.query) return;
@@ -59,6 +63,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
     };
   }, []);
 
+  /** Request location consent, obtain coordinates, and save a privacy-safe label. */
   const handleUseGps = async () => {
     if (!consentChecked) {
       setError('Confirm GPS consent before requesting your location.');
@@ -99,8 +104,8 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
           setManualInput(data.user.location?.name || '');
           setResults([]);
           setSelectedResult(null);
-        } catch (err: any) {
-          setError(err.response?.data?.message || 'Failed to save your location.');
+        } catch (err: unknown) {
+          setError(apiErrorMessage(err, 'Failed to save your location.'));
         } finally {
           setSaving(false);
         }
@@ -129,6 +134,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
     );
   };
 
+  /** Resolve a typed place name into selectable geocoding candidates. */
   const handleManualSearch = async () => {
     const query = manualInput.trim();
     if (!query) {
@@ -149,13 +155,14 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
       if (nextResults.length === 0) {
         setError('No matching location was found. Add the city and country, then search again.');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Location search failed. Try again shortly.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Location search failed. Try again shortly.'));
     } finally {
       setSearching(false);
     }
   };
 
+  /** Persist the selected manual location after validating its coordinates. */
   const handleManualSave = async () => {
     if (!selectedResult) {
       setError('Search for a location and select one result before saving.');
@@ -175,8 +182,8 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
       setManualInput(data.user.location?.name || selectedResult.name);
       setResults([]);
       setSelectedResult(null);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save your location.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to save your location.'));
     } finally {
       setSaving(false);
     }

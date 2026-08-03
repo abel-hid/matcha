@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type FilterName = 'none' | 'grayscale' | 'sepia' | 'contrast';
 
@@ -21,6 +21,7 @@ const FILTERS: { value: FilterName; label: string; canvas: string }[] = [
   { value: 'contrast', label: 'Contrast', canvas: 'contrast(1.25) saturate(1.1)' },
 ];
 
+/** Render crop, rotation, and filter choices into a normalized image canvas. */
 function drawEditedImage(
   target: HTMLCanvasElement,
   image: HTMLImageElement,
@@ -80,6 +81,7 @@ function drawEditedImage(
   context.filter = 'none';
 }
 
+/** Preview and apply controlled client-side image edits before upload. */
 export default function PhotoEditor({
   sourceUrl,
   saving,
@@ -138,6 +140,7 @@ export default function PhotoEditor({
     redraw();
   }, [redraw]);
 
+  /** Render the edited crop to a safe image blob and return it to the gallery. */
   const save = async () => {
     if (!imageRef.current || !ready) {
       return;
@@ -305,6 +308,7 @@ export default function PhotoEditor({
   );
 }
 
+/** Render one labeled numeric control used by the photo editor. */
 function RangeControl({
   label,
   value,

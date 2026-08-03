@@ -35,24 +35,6 @@ export interface User {
   gpsConsent?: boolean;
 }
 
-export interface AuthResponse {
-  user: User;
-}
-
-export interface LoginCredentials {
-  username: string;
-  password: string;
-}
-
-export interface SignupCredentials {
-  username: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  password: string;
-  confirmPassword: string;
-}
-
 export interface TagOption {
   id: number;
   name: string;

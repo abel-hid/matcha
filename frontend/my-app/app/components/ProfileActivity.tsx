@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { profileService } from '@/app/services/api';
 import { useNotifications } from '@/app/components/NotificationBell';
 import UserCard from './UserCard';
@@ -51,6 +52,7 @@ const EMPTY_ACTIVITY: ActivityData = {
   matches: [],
 };
 
+/** Load and display profile views, pending likes, and matches by category. */
 export default function ProfileActivity() {
   const { presenceByUser } = useNotifications();
   const [tab, setTab] = useState<Tab>('visits');
@@ -69,12 +71,13 @@ export default function ProfileActivity() {
           matches: data.matches ?? [],
         });
       })
-      .catch((err: any) => {
-        setError(err.response?.data?.message || 'Failed to load your activity.');
+      .catch((err: unknown) => {
+        setError(apiErrorMessage(err, 'Failed to load your activity.'));
       })
       .finally(() => setLoading(false));
   }, []);
 
+  /** Merge live presence updates into an activity user without mutating API data. */
   const withPresence = (user: ActivityUser) => {
     const presence = presenceByUser[user.id];
     if (!presence) {

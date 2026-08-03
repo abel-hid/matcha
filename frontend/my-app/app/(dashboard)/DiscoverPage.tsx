@@ -1,7 +1,8 @@
 'use client';
 
-import React, { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
+import { apiErrorMessage } from '@/app/lib/apiError';
 import UserCard from '@/app/components/UserCard';
 import { discoverService, profileService } from '@/app/services/api';
 import {
@@ -27,7 +28,8 @@ const DEFAULT_FILTERS: DiscoverFilters = {
   order: 'asc',
 };
 
-export default function Dashboard() {
+/** Render suggested profiles and advanced search using one normalized discovery query. */
+export default function DiscoverPage() {
   const [draftFilters, setDraftFilters] = useState<DiscoverFilters>(
     DEFAULT_FILTERS
   );
@@ -61,28 +63,26 @@ export default function Dashboard() {
         setTotal(data.pagination.total);
         setTotalPages(data.pagination.totalPages);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         setProfiles([]);
         setTotal(0);
         setTotalPages(0);
         setError(
-          err.response?.data?.message
-          || 'Suggested profiles could not be loaded.'
+          apiErrorMessage(err, 'Suggested profiles could not be loaded.')
         );
       })
       .finally(() => setLoading(false));
   }, [appliedFilters, page]);
 
-  const updateNumberFilter = (
-    name: 'minAge' | 'maxAge' | 'minFame' | 'maxFame',
-    value: string
-  ) => {
+  /** Update one numeric filter draft without mutating the other active fields. */
+  const updateNumberFilter = (name: 'minAge' | 'maxAge' | 'minFame' | 'maxFame', value: string) => {
     setDraftFilters((current) => ({
       ...current,
       [name]: Number(value),
     }));
   };
 
+  /** Toggle an interest tag in the pending discovery filter set. */
   const toggleTag = (tagId: number) => {
     setDraftFilters((current) => ({
       ...current,
@@ -92,6 +92,7 @@ export default function Dashboard() {
     }));
   };
 
+  /** Normalize the filter form and launch a new discovery request from page one. */
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFilterError('');
@@ -121,6 +122,7 @@ export default function Dashboard() {
     });
   };
 
+  /** Restore the default discovery filters and reload the first result page. */
   const resetFilters = () => {
     setDraftFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
@@ -392,6 +394,7 @@ export default function Dashboard() {
   );
 }
 
+/** Render a controlled numeric filter input. */
 function NumberField({
   label,
   value,

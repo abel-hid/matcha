@@ -1,24 +1,21 @@
+"""Notification list, unread count, and read-state routes."""
+
 from flask import Blueprint, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required
 
 from app import models
+from app.request_helpers import get_authenticated_user
 from app.profile_access import complete_profile_required
 
 notifications_bp = Blueprint('notifications', __name__, url_prefix='/api/notifications')
-
-
-def get_current_user_or_404():
-    user_id = get_jwt_identity()
-    if user_id is None:
-        return None
-    return models.get_user_by_id(int(user_id))
 
 
 @notifications_bp.route('', methods=['GET'])
 @jwt_required()
 @complete_profile_required
 def list_notifications():
-    user = get_current_user_or_404()
+    """Return recent notifications and the unread total."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -33,8 +30,8 @@ def list_notifications():
 @jwt_required()
 @complete_profile_required
 def unread_count():
-    """Lightweight endpoint for the polling badge — avoids shipping the full list every 8s."""
-    user = get_current_user_or_404()
+    """Lightweight endpoint for the polling badge - avoids shipping the full list every 8s."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -45,7 +42,8 @@ def unread_count():
 @jwt_required()
 @complete_profile_required
 def mark_read(notification_id):
-    user = get_current_user_or_404()
+    """Mark one owned notification as read and return the new unread total."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -57,7 +55,8 @@ def mark_read(notification_id):
 @jwt_required()
 @complete_profile_required
 def mark_all_read():
-    user = get_current_user_or_404()
+    """Mark every owned notification as read."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 

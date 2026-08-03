@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { apiErrorMessage, apiErrorReason } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
-import AuthShowcase from './Authshowcase';
+import AuthShowcase from './AuthShowcase';
 import { resetPasswordSchema, ResetPasswordFormData } from '@/app/lib/authValidation';
 
 const inputClasses =
@@ -31,6 +32,7 @@ const REASON_COPY: Record<string, { title: string; body: string }> = {
   },
 };
 
+/** Validate the reset token and submit a strong replacement password. */
 export default function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,9 +68,9 @@ export default function ResetPasswordForm() {
       .then(() => {
         if (!cancelled) setTokenStatus('valid');
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setInvalidReason(err.response?.data?.reason || 'invalid');
+        setInvalidReason(apiErrorReason(err) || 'invalid');
         setTokenStatus('invalid');
       });
 
@@ -77,6 +79,7 @@ export default function ResetPasswordForm() {
     };
   }, [token]);
 
+  /** Validate and submit the new password with the reset token from the URL. */
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) return;
     setError('');
@@ -86,12 +89,11 @@ export default function ResetPasswordForm() {
       await authService.resetPassword(token, data.password);
       setSuccess(true);
       setTimeout(() => router.push('/login'), 3000);
-    } catch (err: any) {
-      const reason = err.response?.data?.reason;
+    } catch (err: unknown) {
+      const reason = apiErrorReason(err);
       setErrorReason(reason ?? null);
       setError(
-        err.response?.data?.message ||
-          'This link is invalid or has expired. Please request a new one.'
+        apiErrorMessage(err, 'This link is invalid or has expired. Please request a new one.')
       );
       if (reason === 'used' || reason === 'expired' || reason === 'invalid') {
         setTokenStatus('invalid');
@@ -103,13 +105,13 @@ export default function ResetPasswordForm() {
   };
 
   if (tokenStatus === 'checking') {
-    return <div className="min-h-screen bg-[#15101C]" />;
+    return <div className="min-h-[calc(100vh-8rem)] bg-[#15101C]" />;
   }
 
   if (tokenStatus === 'invalid') {
     const copy = REASON_COPY[invalidReason] || REASON_COPY.invalid;
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#15101C] px-6">
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center bg-[#15101C] px-6">
         <div className="w-full max-w-sm rounded-xl border border-[#332844] bg-[#1E1728] p-8 text-center">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF6B6B]/15">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -137,7 +139,7 @@ export default function ResetPasswordForm() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#15101C] px-6">
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center bg-[#15101C] px-6">
         <div className="w-full max-w-sm rounded-xl border border-[#332844] bg-[#1E1728] p-8 text-center">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF4D7E]/15">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -163,7 +165,7 @@ export default function ResetPasswordForm() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#15101C]">
+    <div className="flex min-h-[calc(100vh-8rem)] bg-[#15101C]">
       <AuthShowcase
         eyebrow="Account recovery"
         headline="Almost there."

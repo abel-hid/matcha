@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+import { apiErrorMessage, apiErrorStatus } from '@/app/lib/apiError';
 import { useAudioCall } from '@/app/components/AudioCallProvider';
 import { useNotifications } from '@/app/components/NotificationBell';
 import { useAuth } from '@/app/context/AuthContext';
@@ -24,6 +25,7 @@ const recentVisitIds = new Map<
   }
 >();
 
+/** Reuse one idempotency key per viewed profile during the browser session. */
 function getProfileVisitId(userId: number) {
   const now = Date.now();
   const recent = recentVisitIds.get(userId);
@@ -81,10 +83,12 @@ interface ViewedUser {
   hasReported: boolean;
 }
 
+/** Calculate pluralize for the current UI operation. */
 function pluralize(value: number, unit: string) {
   return `${value} ${unit}${value === 1 ? '' : 's'} ago`;
 }
 
+/** Convert a last-activity timestamp into a concise relative label. */
 function formatLastSeen(iso: string | null) {
   if (!iso) {
     return 'a while ago';
@@ -113,6 +117,7 @@ function formatLastSeen(iso: string | null) {
 
 const MISSING_INFORMATION = 'Not provided';
 
+/** Format profile value for display. */
 function formatProfileValue(value: string) {
   return value
     .split('-')
@@ -125,6 +130,7 @@ function formatProfileValue(value: string) {
     .join('-');
 }
 
+/** Render one labeled public-profile value. */
 function ProfileDetail({
   label,
   value,
@@ -153,6 +159,7 @@ function ProfileDetail({
   );
 }
 
+/** Display public profile data and all authorized relationship actions. */
 export default function UserProfileView() {
   const params = useParams();
   const router = useRouter();
@@ -206,16 +213,15 @@ export default function UserProfileView() {
           getProfileVisitId(loadedUser.id)
         );
       })
-      .catch((err: any) => {
-        if (err.response?.status === 404) {
+      .catch((err: unknown) => {
+        if (apiErrorStatus(err) === 404) {
           setNotFound(true);
           setUser(null);
           return;
         }
 
         setActionError(
-          err.response?.data?.message
-          || 'The profile could not be loaded completely.'
+          apiErrorMessage(err, 'The profile could not be loaded completely.')
         );
       })
       .finally(() => setLoading(false));
@@ -271,6 +277,7 @@ export default function UserProfileView() {
     }
   }, [conversationStatus, currentUserId, viewedUserId]);
 
+  /** Create or remove the current like and synchronize the relationship controls. */
   const handleLikeToggle = async () => {
     if (!user) {
       return;
@@ -297,16 +304,16 @@ export default function UserProfileView() {
           isConnected: data.isConnected,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setActionError(
-        err.response?.data?.message
-        || 'Something went wrong.'
+        apiErrorMessage(err, 'Something went wrong.')
       );
     } finally {
       setLikePending(false);
     }
   };
 
+  /** Block the profile after confirmation and leave the now-unavailable page. */
   const handleBlock = async () => {
     if (!user) {
       return;
@@ -318,16 +325,16 @@ export default function UserProfileView() {
     try {
       await usersService.block(user.id);
       router.replace('/settings/blocked');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setActionError(
-        err.response?.data?.message
-        || 'Failed to block this user.'
+        apiErrorMessage(err, 'Failed to block this user.')
       );
 
       setBlockPending(false);
     }
   };
 
+  /** Submit the single supported fake-account report without requesting free text. */
   const handleReport = async () => {
     if (!user) {
       return;
@@ -338,10 +345,9 @@ export default function UserProfileView() {
     try {
       await usersService.report(user.id);
       setReported(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setActionError(
-        err.response?.data?.message
-        || 'Failed to submit report.'
+        apiErrorMessage(err, 'Failed to submit report.')
       );
     }
   };
@@ -417,7 +423,7 @@ export default function UserProfileView() {
         {(user.theyLikedMe || user.isConnected) && (
           <div className="mb-4 rounded-lg border border-[#FF4D7E]/30 bg-[#FF4D7E]/10 px-4 py-2.5 text-sm text-[#FF8FAE]">
             {user.isConnected
-              ? 'You’re connected — you can chat.'
+              ? 'You’re connected - you can chat.'
               : 'This user liked you.'}
           </div>
         )}

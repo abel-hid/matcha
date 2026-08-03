@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
 
 type Status = 'checking' | 'success' | 'already' | 'error';
 
+/** Verify an email token and provide controlled retry states. */
 export default function VerifyEmailForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -27,8 +29,8 @@ export default function VerifyEmailForm() {
         setStatus('success');
         setMessage(data.message || 'Email verified successfully.');
       })
-      .catch((err: any) => {
-        const msg = err.response?.data?.message || 'This link is invalid or has expired.';
+      .catch((err: unknown) => {
+        const msg = apiErrorMessage(err, 'This link is invalid or has expired.');
         if (msg.toLowerCase().includes('already verified')) {
           setStatus('already');
         } else {
@@ -39,7 +41,7 @@ export default function VerifyEmailForm() {
   }, [token]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#15101C] px-6">
+    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center bg-[#15101C] px-6">
       <div className="w-full max-w-sm rounded-xl border border-[#332844] bg-[#1E1728] p-8 text-center">
         {status === 'checking' && (
           <>
@@ -67,7 +69,7 @@ export default function VerifyEmailForm() {
             </h2>
             <p className="mt-2 text-sm text-[#9C8FA8]">
               {status === 'already'
-                ? 'This email was already confirmed — you can sign in.'
+                ? 'This email was already confirmed - you can sign in.'
                 : 'Your account is ready. You can sign in now.'}
             </p>
             <Link

@@ -1,9 +1,12 @@
+"""Private profile editing, tags, photos, location, and activity routes."""
+
 from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
 from app import models
+from app.request_helpers import get_authenticated_user, json_object
 from app.profile_access import complete_profile_required
 from app.utils import (
     LocationServiceError,
@@ -27,21 +30,8 @@ from app.validation import (
 profile_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
 
 
-def get_current_user_or_404():
-    user_id = get_jwt_identity()
-    if user_id is None:
-        return None
-    return models.get_user_by_id(int(user_id))
-
-
-def json_object():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return None
-    return data
-
-
 def private_user_response(user_id):
+    """Return a private profile response with provider-link metadata."""
     user = models.get_user_by_id(user_id)
     return models.user_to_dict(user, include_private=True)
 
@@ -49,7 +39,8 @@ def private_user_response(user_id):
 @profile_bp.route('', methods=['GET'])
 @jwt_required()
 def get_profile():
-    user = get_current_user_or_404()
+    """Return the authenticated user’s private editable profile."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
     return jsonify({'user': models.user_to_dict(user, include_private=True)}), 200
@@ -58,7 +49,8 @@ def get_profile():
 @profile_bp.route('', methods=['PUT'])
 @jwt_required()
 def update_profile():
-    user = get_current_user_or_404()
+    """Validate and update editable identity and profile fields."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -150,6 +142,7 @@ def update_profile():
 @profile_bp.route('/tags', methods=['GET'])
 @jwt_required()
 def list_tags():
+    """Return the fixed reusable interest catalogue."""
     tags = models.get_all_tags()
     return jsonify({'tags': [{'id': tag['id'], 'name': tag['name']} for tag in tags]}), 200
 
@@ -157,7 +150,8 @@ def list_tags():
 @profile_bp.route('/tags', methods=['PUT'])
 @jwt_required()
 def set_my_tags():
-    user = get_current_user_or_404()
+    """Replace the authenticated user's selected interests."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -190,7 +184,8 @@ def set_my_tags():
 @profile_bp.route('/photos', methods=['POST'])
 @jwt_required()
 def upload_photo():
-    user = get_current_user_or_404()
+    """Validate, re-encode, save, and register a new profile image."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -227,7 +222,8 @@ def upload_photo():
 @profile_bp.route('/photos/<int:photo_id>', methods=['PUT'])
 @jwt_required()
 def replace_photo(photo_id):
-    user = get_current_user_or_404()
+    """Validate and replace an owned profile image without changing its identity."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -271,7 +267,8 @@ def replace_photo(photo_id):
 @profile_bp.route('/photos/<int:photo_id>', methods=['DELETE'])
 @jwt_required()
 def delete_photo(photo_id):
-    user = get_current_user_or_404()
+    """Delete an owned photo while preserving mandatory profile requirements."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -297,7 +294,8 @@ def delete_photo(photo_id):
 @profile_bp.route('/photos/<int:photo_id>/primary', methods=['PUT'])
 @jwt_required()
 def set_primary_photo(photo_id):
-    user = get_current_user_or_404()
+    """Set an owned image as the single primary profile photo."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -314,7 +312,8 @@ def set_primary_photo(photo_id):
 @profile_bp.route('/location/search', methods=['GET'])
 @jwt_required()
 def search_location():
-    user = get_current_user_or_404()
+    """Search the configured geocoder for manual location choices."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -335,7 +334,8 @@ def search_location():
 @profile_bp.route('/location', methods=['PUT'])
 @jwt_required()
 def update_location():
-    user = get_current_user_or_404()
+    """Save GPS or manual location with explicit consent and coordinate validation."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -390,7 +390,8 @@ def update_location():
 @jwt_required()
 @complete_profile_required
 def get_viewers():
-    user = get_current_user_or_404()
+    """Return profile visit history visible to the account owner."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -404,7 +405,8 @@ def get_viewers():
 @jwt_required()
 @complete_profile_required
 def get_likes():
-    user = get_current_user_or_404()
+    """Return incoming, outgoing, and mutual-like activity."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
@@ -418,7 +420,8 @@ def get_likes():
 @jwt_required()
 @complete_profile_required
 def get_activity():
-    user = get_current_user_or_404()
+    """Return categorized views, likes, and matches for the activity page."""
+    user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
 

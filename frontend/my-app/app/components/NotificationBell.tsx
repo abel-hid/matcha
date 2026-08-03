@@ -85,6 +85,7 @@ const NotificationContext = (
   createContext<NotificationContextValue | null>(null)
 );
 
+/** Maintain global notification state, live updates, and independent toast timers. */
 export function NotificationProvider({
   children,
 }: {
@@ -360,6 +361,7 @@ export function NotificationProvider({
   );
 }
 
+/** Render one independently dismissible real-time notification. */
 function NotificationToast({
   notification,
   onClose,
@@ -415,6 +417,7 @@ function NotificationToast({
   );
 }
 
+/** Expose notification state and actions through the provider context. */
 export function useNotifications() {
   const context = useContext(NotificationContext);
 
@@ -427,6 +430,7 @@ export function useNotifications() {
   return context;
 }
 
+/** Render unread state and the notification history menu. */
 export function NotificationBell() {
   const {
     unreadCount,
@@ -447,6 +451,7 @@ export function NotificationBell() {
   }, [open, refresh]);
 
   useEffect(() => {
+    /** Close the notification panel when a pointer event starts outside it. */
     function onClickOutside(event: MouseEvent) {
       if (
         boxRef.current
@@ -579,6 +584,7 @@ export function NotificationBell() {
   );
 }
 
+/** Map a notification record to user-facing text. */
 function notificationLabel(notification: Notification) {
   const name = notification.fromUser?.username ?? 'Someone';
 

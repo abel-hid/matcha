@@ -11,6 +11,7 @@ import React, {
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
+import { apiErrorMessage } from '@/app/lib/apiError';
 import { useNotifications } from '@/app/components/NotificationBell';
 import { useAuth } from '@/app/context/AuthContext';
 import {
@@ -28,6 +29,7 @@ const API_BASE_URL = (
   || 'http://localhost:5000'
 );
 
+/** Load, create, accept, decline, and cancel date proposals for matched users. */
 function DatesPageContent() {
   const params = useSearchParams();
   const requestedUsername = params.get('with');
@@ -93,10 +95,9 @@ function DatesPageContent() {
         );
         return String(requested?.user.id ?? availableConnections[0]?.user.id ?? '');
       });
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'Date proposals could not be loaded.'
+        apiErrorMessage(requestError, 'Date proposals could not be loaded.')
       );
     } finally {
       setLoading(false);
@@ -139,6 +140,7 @@ function DatesPageContent() {
     !upcoming.some((upcomingEvent) => upcomingEvent.id === event.id)
   )).reverse(), [events, upcoming]);
 
+  /** Validate and submit a new date proposal for the selected connection. */
   const submit = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -168,36 +170,33 @@ function DatesPageContent() {
       setScheduledFor('');
       setLocation('');
       setNote('');
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'The date proposal could not be created.'
+        apiErrorMessage(requestError, 'The date proposal could not be created.')
       );
     } finally {
       setSaving(false);
     }
   };
 
-  const respond = async (
-    eventId: number,
-    status: 'accepted' | 'declined'
-  ) => {
+  /** Accept or decline a pending proposal and refresh the visible date lists. */
+  const respond = async (eventId: number, status: 'accepted' | 'declined') => {
     setPendingEventId(eventId);
     setError('');
 
     try {
       const data = await datesService.respond(eventId, status);
       replaceEvent(data.event as DateEvent);
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'The proposal could not be updated.'
+        apiErrorMessage(requestError, 'The proposal could not be updated.')
       );
     } finally {
       setPendingEventId(null);
     }
   };
 
+  /** Cancel a pending or accepted future date owned by either participant. */
   const cancel = async (eventId: number) => {
     setPendingEventId(eventId);
     setError('');
@@ -205,10 +204,9 @@ function DatesPageContent() {
     try {
       const data = await datesService.cancel(eventId);
       replaceEvent(data.event as DateEvent);
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
       setError(
-        requestError.response?.data?.message
-        || 'The date could not be cancelled.'
+        apiErrorMessage(requestError, 'The date could not be cancelled.')
       );
     } finally {
       setPendingEventId(null);
@@ -351,6 +349,7 @@ function DatesPageContent() {
   );
 }
 
+/** Render one date-event group with the actions currently allowed to the user. */
 function DateSection({
   title,
   empty,
@@ -479,6 +478,7 @@ function DateSection({
   );
 }
 
+/** Render a readable visual label for the date-event status. */
 function StatusBadge({ status }: { status: DateEvent['status'] }) {
   const classes: Record<DateEvent['status'], string> = {
     pending: 'bg-[#F2C879]/10 text-[#F2C879]',
@@ -494,6 +494,7 @@ function StatusBadge({ status }: { status: DateEvent['status'] }) {
   );
 }
 
+/** Format a UTC API timestamp in the browser’s local timezone. */
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -501,12 +502,14 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+/** Return the earliest selectable local date and time. */
 function minimumLocalDateTime() {
   const date = new Date(Date.now() + 60_000);
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+/** Render this application route and delegate its feature logic to the page component. */
 export default function DatesPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#15101C]" />}>
