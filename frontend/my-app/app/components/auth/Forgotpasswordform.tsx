@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { apiErrorMessage } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
-import AuthShowcase from './AuthShowcase';
+import AuthShowcase from './Authshowcase'
 
 /** Submit a neutral password-reset request without exposing account existence. */
 export default function ForgotPasswordForm() {

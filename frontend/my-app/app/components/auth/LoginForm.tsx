@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/app/context/AuthContext';
 import { apiErrorMessage } from '@/app/lib/apiError';
 
-import AuthShowcase from './AuthShowcase';
+import AuthShowcase from './Authshowcase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 

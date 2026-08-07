@@ -10,7 +10,7 @@ import { useAuth } from '@/app/context/AuthContext';
 import { apiErrorMessage } from '@/app/lib/apiError';
 import { signupSchema, type SignupFormData } from '@/app/lib/authValidation';
 
-import AuthShowcase from './AuthShowcase';
+import AuthShowcase from './Authshowcase';
 
 const inputClasses =
   'mt-1.5 w-full rounded-lg border border-[#332844] bg-[#1E1728] px-4 py-2.5 text-[#F5EFE9] placeholder-[#6E6180] outline-none transition focus:border-[#FF4D7E] focus:ring-2 focus:ring-[#FF4D7E]/30';

@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { apiErrorMessage, apiErrorReason } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
-import AuthShowcase from './AuthShowcase';
+import AuthShowcase from './Authshowcase';
 import { resetPasswordSchema, ResetPasswordFormData } from '@/app/lib/authValidation';
 
 const inputClasses =
