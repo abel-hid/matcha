@@ -52,7 +52,7 @@ const EMPTY_ACTIVITY: ActivityData = {
   matches: [],
 };
 
-/** Load and display profile views, pending likes, and matches by category. */
+
 export default function ProfileActivity() {
   const { presenceByUser } = useNotifications();
   const [tab, setTab] = useState<Tab>('visits');
@@ -77,7 +77,7 @@ export default function ProfileActivity() {
       .finally(() => setLoading(false));
   }, []);
 
-  /** Merge live presence updates into an activity user without mutating API data. */
+  
   const withPresence = (user: ActivityUser) => {
     const presence = presenceByUser[user.id];
     if (!presence) {

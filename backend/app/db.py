@@ -1,7 +1,3 @@
-"""
-Every query below uses %s placeholders with parameters passed as a tuple -
-never string formatting - so this is not vulnerable to SQL injection.
-"""
 import psycopg2
 import psycopg2.pool
 from psycopg2.extras import RealDictCursor
@@ -13,7 +9,6 @@ _pool = None
 
 
 def init_pool(database_url=None, minimum=None, maximum=None):
-    """Create the process-wide thread-safe PostgreSQL connection pool once."""
     global _pool
     if _pool is None:
         _pool = psycopg2.pool.ThreadedConnectionPool(
@@ -26,7 +21,6 @@ def init_pool(database_url=None, minimum=None, maximum=None):
 
 @contextmanager
 def get_conn():
-    """Borrow a pooled connection and always commit, rollback, and return it safely."""
     p = init_pool()
     conn = p.getconn()
     try:
@@ -39,8 +33,7 @@ def get_conn():
         p.putconn(conn)
 
 
-def query_one(sql, params=None):
-    """SELECT expected to return 0 or 1 row. Returns a dict or None."""
+def query_one(sql, params=None): # SELECT expected to return 0 or 1 row.
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params or ())
@@ -48,19 +41,16 @@ def query_one(sql, params=None):
             return dict(row) if row else None
 
 
-def query_all(sql, params=None):
-    """SELECT expected to return 0+ rows. Returns a list of dicts."""
+def query_all(sql, params=None): # SELECT expected to return 0 or more rows.
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params or ())
             return [dict(r) for r in cur.fetchall()]
 
 
-def execute(sql, params=None, returning=False):
-    """INSERT/UPDATE/DELETE. Pass returning=True with a RETURNING clause
-    to get the affected row back as a dict; otherwise returns rowcount."""
+def execute(sql, params=None, returning=False): #returning=False means we don't expect a result set, returning=True means we expect a single row to be returned.
     with get_conn() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur: # Cursor factory allows us to get results as dictionaries instead of tuples.
             cur.execute(sql, params or ())
             if returning:
                 row = cur.fetchone()

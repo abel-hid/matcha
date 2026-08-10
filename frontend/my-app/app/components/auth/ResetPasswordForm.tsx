@@ -32,7 +32,7 @@ const REASON_COPY: Record<string, { title: string; body: string }> = {
   },
 };
 
-/** Validate the reset token and submit a strong replacement password. */
+
 export default function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -79,7 +79,7 @@ export default function ResetPasswordForm() {
     };
   }, [token]);
 
-  /** Validate and submit the new password with the reset token from the URL. */
+  
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) return;
     setError('');

@@ -1,5 +1,3 @@
-"""Reusable authorization guard for features that require a complete profile."""
-
 from functools import wraps
 
 from flask import jsonify

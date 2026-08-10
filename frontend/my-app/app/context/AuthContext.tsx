@@ -22,7 +22,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/** Bootstrap cookie authentication, rotate sessions, and expose auth actions globally. */
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Expose authenticated user and session actions through context. */
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {

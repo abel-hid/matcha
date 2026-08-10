@@ -1,5 +1,3 @@
-"""Token, email, image, distance, and geocoding utilities."""
-
 import os
 import secrets
 import warnings
@@ -58,11 +56,6 @@ def generate_reset_token(email, token_version):
     )
 
 def verify_reset_token(token, expiration=3600):
-    """
-    Verify password reset token.
-    Returns (payload, None) on success, or (None, reason) on failure,
-    where reason is 'expired' or 'invalid'.
-    """
     serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
     try:
         data = serializer.loads(token, salt='password-reset', max_age=expiration)
@@ -240,8 +233,6 @@ def delete_saved_image(filename):
         return False
 
 class LocationServiceError(Exception):
-    """Signal that the external geocoding provider could not answer safely."""
-
     pass
 
 

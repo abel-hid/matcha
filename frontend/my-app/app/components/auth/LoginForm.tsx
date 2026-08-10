@@ -11,7 +11,7 @@ import AuthShowcase from './Authshowcase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-/** Authenticate local credentials or start a configured OAuth flow. */
+
 export default function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +34,7 @@ export default function LoginForm() {
     }
   }, [searchParams]);
 
-  /** Authenticate the credentials and route the user according to profile completion. */
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -174,7 +174,7 @@ export default function LoginForm() {
   );
 }
 
-/** Translate a safe OAuth error code into a user-facing message. */
+
 function oauthErrorMessage(code: string): string {
   switch (code) {
     case 'invalid_state':
@@ -199,14 +199,14 @@ function oauthErrorMessage(code: string): string {
   }
 }
 
-/** Render the compact 42 provider mark. */
+
 function FortyTwoIcon() {
   return (
     <img src="/42_Logo.svg" alt="42" width={18} height={18} />
   );
 }
 
-/** Render the compact Google provider mark. */
+
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

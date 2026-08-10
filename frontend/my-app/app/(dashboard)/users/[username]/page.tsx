@@ -25,7 +25,7 @@ const recentVisitIds = new Map<
   }
 >();
 
-/** Reuse one idempotency key per viewed profile during the browser session. */
+
 function getProfileVisitId(userId: number) {
   const now = Date.now();
   const recent = recentVisitIds.get(userId);
@@ -83,12 +83,12 @@ interface ViewedUser {
   hasReported: boolean;
 }
 
-/** Calculate pluralize for the current UI operation. */
+
 function pluralize(value: number, unit: string) {
   return `${value} ${unit}${value === 1 ? '' : 's'} ago`;
 }
 
-/** Convert a last-activity timestamp into a concise relative label. */
+
 function formatLastSeen(iso: string | null) {
   if (!iso) {
     return 'a while ago';
@@ -117,7 +117,7 @@ function formatLastSeen(iso: string | null) {
 
 const MISSING_INFORMATION = 'Not provided';
 
-/** Format profile value for display. */
+
 function formatProfileValue(value: string) {
   return value
     .split('-')
@@ -130,7 +130,7 @@ function formatProfileValue(value: string) {
     .join('-');
 }
 
-/** Render one labeled public-profile value. */
+
 function ProfileDetail({
   label,
   value,
@@ -159,7 +159,7 @@ function ProfileDetail({
   );
 }
 
-/** Display public profile data and all authorized relationship actions. */
+
 export default function UserProfileView() {
   const params = useParams();
   const router = useRouter();
@@ -277,7 +277,7 @@ export default function UserProfileView() {
     }
   }, [conversationStatus, currentUserId, viewedUserId]);
 
-  /** Create or remove the current like and synchronize the relationship controls. */
+  
   const handleLikeToggle = async () => {
     if (!user) {
       return;
@@ -313,7 +313,7 @@ export default function UserProfileView() {
     }
   };
 
-  /** Block the profile after confirmation and leave the now-unavailable page. */
+  
   const handleBlock = async () => {
     if (!user) {
       return;
@@ -334,7 +334,7 @@ export default function UserProfileView() {
     }
   };
 
-  /** Submit the single supported fake-account report without requesting free text. */
+  
   const handleReport = async () => {
     if (!user) {
       return;

@@ -1,5 +1,3 @@
-"""Google and 42 OAuth state, provider exchange, account linking, and login completion."""
-
 import secrets
 import time
 from urllib.parse import urlencode

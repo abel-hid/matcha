@@ -32,7 +32,7 @@ const CONVERSATION_PAGE_SIZE = 50;
 const FALLBACK_POLL_INTERVAL_MS = 8_000;
 const MESSAGE_MAX_LENGTH = 1000;
 
-/** Merge live and paginated messages without duplicates and keep chronological order. */
+
 function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
   const messagesById = new Map<number, ChatMessage>();
 
@@ -50,7 +50,7 @@ function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
   });
 }
 
-/** Format a message timestamp for the current browser locale. */
+
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleString([], {
     dateStyle: 'short',
@@ -58,7 +58,7 @@ function formatMessageTime(value: string) {
   });
 }
 
-/** Describe online or last-seen state for a conversation contact. */
+
 function formatPresence(user: ChatUser) {
   if (user.isOnline) {
     return 'Online';
@@ -71,7 +71,7 @@ function formatPresence(user: ChatUser) {
   return `Last seen ${new Date(user.lastActivity).toLocaleString()}`;
 }
 
-/** Coordinate conversation loading, live messages, read receipts, and audio calls. */
+
 function MessagesPageContent() {
   const searchParams = useSearchParams();
   const requestedUsername = searchParams.get('with');
@@ -366,7 +366,7 @@ function MessagesPageContent() {
     selectedUserId,
   ]);
 
-  /** Send a trimmed message and reconcile the optimistic conversation state. */
+  
   const handleSend = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -419,7 +419,7 @@ function MessagesPageContent() {
     }
   };
 
-  /** Fetch the previous conversation page without disturbing newer messages. */
+  
   const handleLoadOlder = async () => {
     if (!selectedUserId || loadingOlder || page >= totalPages) {
       return;
@@ -708,7 +708,7 @@ function MessagesPageContent() {
   );
 }
 
-/** Render this application route and delegate its feature logic to the page component. */
+
 export default function MessagesPage() {
   return (
     <Suspense

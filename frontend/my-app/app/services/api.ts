@@ -37,18 +37,18 @@ export interface DateProposalPayload {
   note?: string;
 }
 
-/** Return whether the browser still has either readable CSRF cookie. */
+
 export function hasAuthenticationCookieHint(): boolean {
   return Boolean(Cookies.get('csrf_access_token') || Cookies.get('csrf_refresh_token'));
 }
 
-/** Remove readable CSRF hints after an authentication failure. */
+
 export function clearAuthenticationCookieHints(): void {
   Cookies.remove('csrf_access_token');
   Cookies.remove('csrf_refresh_token');
 }
 
-/** Return the correct CSRF token for an unsafe request, when available. */
+
 function csrfTokenFor(url?: string): string | undefined {
   const cookie = url?.startsWith('/api/auth/refresh')
     ? 'csrf_refresh_token'
@@ -56,7 +56,7 @@ function csrfTokenFor(url?: string): string | undefined {
   return Cookies.get(cookie);
 }
 
-/** Return whether a failed request is eligible for one access-token refresh retry. */
+
 function shouldRefresh(url?: string): boolean {
   if (!url) {
     return false;
@@ -289,7 +289,7 @@ export const usersService = {
 
 // ------------------------------------------------------------ browse and search
 
-/** Serialize typed discovery filters into the query parameters expected by Flask. */
+
 function discoveryParams(filters: DiscoveryFilters) {
   return {
     minAge: filters.minAge,

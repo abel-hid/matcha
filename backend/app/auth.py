@@ -1,5 +1,3 @@
-"""Authentication routes for registration, verification, sessions, logout, and password recovery."""
-
 from datetime import datetime
 
 import psycopg2
@@ -34,14 +32,11 @@ from app.validation import (
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-_NEUTRAL_VERIFICATION_MESSAGE = (
-    'If the account exists and still needs verification, a verification email has been sent'
-)
+_NEUTRAL_VERIFICATION_MESSAGE = ('If the account exists and still needs verification, a verification email has been sent')
 _NEUTRAL_RESET_MESSAGE = 'Password reset email sent if account exists'
 
 
 def attach_session_cookies(response, user):
-    """Set access and refresh JWT cookies on an authentication response."""
     expires_at = datetime.utcnow() + current_app.config['JWT_REFRESH_TOKEN_EXPIRES']
     session_id = models.create_session(user['id'], expires_at)
     access_token, refresh_token = models.get_tokens_for_user(user, session_id)
@@ -53,7 +48,6 @@ def attach_session_cookies(response, user):
 
 @auth_bp.route('/refresh/bootstrap', methods=['POST'])
 def bootstrap_session():
-    """Restore an authenticated browser session without producing an expected 401 probe."""
     try:
         verify_jwt_in_request(refresh=True)
     except (JWTExtendedException, PyJWTError):
@@ -95,7 +89,6 @@ def bootstrap_session():
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    """Return the private profile for the authenticated session."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -104,7 +97,6 @@ def get_current_user():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Validate registration data, create the account, and send verification email."""
     registration, error = validate_registration_data(json_object())
     if error:
         return jsonify({'message': error}), 400
@@ -140,7 +132,6 @@ def register():
 
 @auth_bp.route('/verify/<token>', methods=['GET'])
 def verify_email(token):
-    """Verify a unique email token and activate the account."""
     payload, reason = verify_verification_token(token)
     if not payload:
         message = (
@@ -164,7 +155,6 @@ def verify_email(token):
 
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
-    """Issue a new verification email without exposing account existence."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -185,7 +175,6 @@ def resend_verification():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
-    """Authenticate credentials and create a revocable server-side session."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -215,7 +204,6 @@ def login():
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
-    """Rotate an active refresh session and return fresh authentication cookies."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -239,7 +227,6 @@ def refresh():
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """Revoke the current session and clear all authentication cookies."""
     session_id = get_jwt().get('sid')
     models.revoke_session(session_id)
 
@@ -253,7 +240,6 @@ def logout():
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
-    """Send a reset link while returning the same response for unknown addresses."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -274,7 +260,6 @@ def forgot_password():
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
-    """Validate a reset token, replace the password, and revoke old sessions."""
     data = json_object()
     if data is None:
         return jsonify({'message': 'Request body must be a JSON object'}), 400
@@ -327,7 +312,6 @@ def reset_password():
 
 @auth_bp.route('/verify-reset-token/<token>', methods=['GET'])
 def verify_reset_token_route(token):
-    """Check whether a password-reset token remains valid."""
     payload, reason = verify_reset_token(token)
     if not payload:
         return jsonify({'valid': False, 'reason': reason}), 400

@@ -17,7 +17,7 @@ const inputClasses =
 
 const labelClasses = 'block text-xs font-medium uppercase tracking-wide text-[#9C8FA8]';
 
-/** Validate and submit mandatory registration fields. */
+
 export default function SignupForm() {
   const { signup, user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -38,7 +38,7 @@ export default function SignupForm() {
     resolver: zodResolver(signupSchema),
   });
 
-  /** Validate registration data and create the pending email-verification account. */
+  
   const onSubmit = async (data: SignupFormData) => {
     setError('');
     setLoading(true);

@@ -1,5 +1,3 @@
-"""Notification list, unread count, and read-state routes."""
-
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 
@@ -14,7 +12,6 @@ notifications_bp = Blueprint('notifications', __name__, url_prefix='/api/notific
 @jwt_required()
 @complete_profile_required
 def list_notifications():
-    """Return recent notifications and the unread total."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -30,7 +27,6 @@ def list_notifications():
 @jwt_required()
 @complete_profile_required
 def unread_count():
-    """Lightweight endpoint for the polling badge - avoids shipping the full list every 8s."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -42,7 +38,6 @@ def unread_count():
 @jwt_required()
 @complete_profile_required
 def mark_read(notification_id):
-    """Mark one owned notification as read and return the new unread total."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -55,7 +50,6 @@ def mark_read(notification_id):
 @jwt_required()
 @complete_profile_required
 def mark_all_read():
-    """Mark every owned notification as read."""
     user = get_authenticated_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404

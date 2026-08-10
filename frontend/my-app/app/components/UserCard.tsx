@@ -21,7 +21,6 @@ interface UserCardProps {
   meta?: React.ReactNode;
 }
 
-/** Convert a last-activity timestamp into a concise relative label. */
 function formatLastSeen(iso: string | null) {
   if (!iso) {
     return 'a while ago';
@@ -48,7 +47,6 @@ function formatLastSeen(iso: string | null) {
   return `${days}d ago`;
 }
 
-/** Render one discover or search result with ranking and presence information. */
 export default function UserCard({
   user,
   apiBaseUrl,

@@ -20,7 +20,7 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-/** Enforce authentication and profile completion while providing responsive navigation. */
+
 export default function AppLayout({ children }: AppLayoutProps) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
@@ -44,7 +44,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setMobileOpen(false);
   }, [pathname]);
 
-  /** End the authenticated session before returning the browser to the login page. */
+  
   const handleLogout = async () => {
     setLogoutError('');
     try {

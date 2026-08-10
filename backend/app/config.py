@@ -1,5 +1,3 @@
-"""Local Docker configuration and startup validation for Matcha."""
-
 import os
 from datetime import timedelta
 
@@ -8,7 +6,6 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 
 def get_boolean(name, default=False):
-    """Read a strict true-or-false environment variable."""
     value = os.environ.get(name)
     if value is None:
         return default
@@ -20,7 +17,6 @@ def get_boolean(name, default=False):
 
 
 def get_integer(name, default):
-    """Read an integer environment variable with a controlled startup error."""
     value = os.environ.get(name)
     if value is None:
         return default
@@ -32,35 +28,28 @@ def get_integer(name, default):
 
 
 class Config:
-    """Settings for the supported local Docker runtime."""
-
     SECRET_KEY = os.environ.get('SECRET_KEY')
     DATABASE_URL = os.environ.get('DATABASE_URL')
 
-    # The backend always runs inside Docker and is exposed only through the
-    # localhost port binding defined in docker-compose.yml.
     DEBUG = False
     BACKEND_HOST = '0.0.0.0'
     BACKEND_PORT = 5000
-    DB_POOL_MIN = 1
-    DB_POOL_MAX = 20
+    DB_POOL_MIN = 1 # Minimum number of connections to keep in the pool.
+    DB_POOL_MAX = 20 # Maximum number of connections to keep in the pool.
 
-    # JWT cookies are HttpOnly and CSRF protected. Secure cookies remain off
-    # because the supported evaluation URL is local HTTP on localhost.
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=180)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
-    JWT_TOKEN_LOCATION = ['cookies']
-    JWT_COOKIE_SECURE = False
-    JWT_COOKIE_SAMESITE = 'Lax'
-    JWT_COOKIE_CSRF_PROTECT = True
+    JWT_TOKEN_LOCATION = ['cookies'] # Store JWTs in cookies instead of headers.
+    JWT_COOKIE_SECURE = False # for local development, True in production
+    JWT_COOKIE_SAMESITE = 'Lax' # for local development, Strict in production
+    JWT_COOKIE_CSRF_PROTECT = True # Enable CSRF protection for JWT cookies. (CSRF protection is important for cookies to prevent cross-site request forgery attacks)
     JWT_CSRF_IN_COOKIES = True
     JWT_ACCESS_COOKIE_PATH = '/'
     JWT_REFRESH_COOKIE_PATH = '/api/auth/refresh'
     JWT_ACCESS_CSRF_COOKIE_PATH = '/'
     JWT_REFRESH_CSRF_COOKIE_PATH = '/'
 
-    # Flask's session cookie stores only temporary OAuth state.
     SESSION_COOKIE_NAME = 'matcha_oauth_state'
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
@@ -84,11 +73,11 @@ class Config:
         'NOMINATIM_USER_AGENT',
         'MatchaSchoolProject/1.0',
     )
-    NOMINATIM_TIMEOUT_SECONDS = get_integer('NOMINATIM_TIMEOUT_SECONDS', 8)
+    NOMINATIM_TIMEOUT_SECONDS = get_integer('NOMINATIM_TIMEOUT_SECONDS', 8) # Timeout if the Nominatim API does not respond within this time frame.
 
     UPLOAD_FOLDER = UPLOAD_FOLDER
-    MAX_CONTENT_LENGTH = 6 * 1024 * 1024
-    MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024
+    MAX_CONTENT_LENGTH = 6 * 1024 * 1024 # entire request size limit, including headers and body. 6 MB
+    MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024 # individual image file size limit. 5 MB
     ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG'}
     MAX_IMAGE_PIXELS = 20_000_000
     MAX_IMAGE_DIMENSION = 8_000
@@ -107,7 +96,6 @@ class Config:
 
     @classmethod
     def validate(cls):
-        """Fail startup when required secrets or grouped settings are missing."""
         required = {
             'SECRET_KEY': cls.SECRET_KEY,
             'DATABASE_URL': cls.DATABASE_URL,
@@ -156,13 +144,11 @@ class Config:
 
     @classmethod
     def validate_database(cls):
-        """Fail database utilities when the Compose database URL is missing."""
         if not cls.DATABASE_URL:
             raise RuntimeError('Missing required environment variable: DATABASE_URL')
 
     @staticmethod
     def _validate_optional_group(errors, group_name, values):
-        """Require optional provider settings to be configured as a complete group."""
         configured = [name for name, value in values.items() if value]
         if configured and len(configured) != len(values):
             missing = [name for name, value in values.items() if not value]

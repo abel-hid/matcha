@@ -24,7 +24,7 @@ const DEFAULT_FILTERS: DiscoverFilters = {
   order: 'asc',
 };
 
-/** Load privacy-rounded compatible profiles and render the interactive user map. */
+
 export default function MapPage() {
   const [draftFilters, setDraftFilters] = useState(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
@@ -59,7 +59,7 @@ export default function MapPage() {
       .finally(() => setLoading(false));
   }, [appliedFilters, reloadVersion]);
 
-  /** Update one numeric map filter while retaining the remaining filter draft. */
+  
   const updateNumber = (field: 'minAge' | 'maxAge' | 'minFame' | 'maxFame', value: string) => {
     setDraftFilters((current) => ({
       ...current,
@@ -67,7 +67,7 @@ export default function MapPage() {
     }));
   };
 
-  /** Toggle an interest tag used to filter map markers. */
+  
   const toggleTag = (tagId: number) => {
     setDraftFilters((current) => ({
       ...current,
@@ -77,7 +77,7 @@ export default function MapPage() {
     }));
   };
 
-  /** Apply the current map filters and request a fresh marker set. */
+  
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFilterError('');
@@ -106,7 +106,7 @@ export default function MapPage() {
     });
   };
 
-  /** Request explicit GPS consent and refresh markers around the saved position. */
+  
   const usePreciseGps = async () => {
     if (!gpsConsent) {
       setError('Confirm GPS consent before requesting your location.');
@@ -282,7 +282,7 @@ export default function MapPage() {
   );
 }
 
-/** Render a controlled numeric filter input. */
+
 function NumberField({
   label,
   value,

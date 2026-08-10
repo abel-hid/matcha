@@ -47,7 +47,7 @@ type Gender = 'male' | 'female' | 'non-binary';
 const MIN_PROFILE_AGE = 18;
 const MAX_PROFILE_AGE = 80;
 
-/** Format date input for display. */
+
 function formatDateInput(value: Date) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -56,7 +56,7 @@ function formatDateInput(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
-/** Calculate date years ago for the current UI operation. */
+
 function dateYearsAgo(years: number) {
   const today = new Date();
   const targetYear = today.getFullYear() - years;
@@ -70,7 +70,7 @@ function dateYearsAgo(years: number) {
   );
 }
 
-/** Calculate the current age from a date-only profile value. */
+
 function calculateProfileAge(value: string) {
   const [year, month, day] = value.split('-').map(Number);
 
@@ -102,7 +102,7 @@ const oldestAllowedBirthDate = formatDateInput(
   oldestBirthDateBoundary
 );
 
-/** Edit mandatory identity and profile data while enforcing the completion gate. */
+
 export default function ProfileForm() {
   const { user: authUser, updateUser } = useAuth();
   const [profile, setProfile] = useState<User | null>(null);
@@ -123,20 +123,20 @@ export default function ProfileForm() {
       .finally(() => setLoading(false));
   }, [updateUser]);
 
-  /** Merge a confirmed partial profile response into the current form state. */
+  
   const applyProfileUpdate = (updatedProfile: User) => {
     setProfile(updatedProfile);
     updateUser(updatedProfile);
   };
 
-  /** Update one editable profile field while preserving the rest of the draft. */
+  
   const updateField = <K extends keyof User>(key: K, value: User[K]) => {
     setProfile((previous) => (previous ? { ...previous, [key]: value } : previous));
     setSaved(false);
     setError('');
   };
 
-  /** Toggle a preferred gender while enforcing the supported preference values. */
+  
   const togglePreference = (preference: Gender) => {
     if (!profile) return;
 
@@ -152,7 +152,7 @@ export default function ProfileForm() {
     updateField('sexualPreferences', nextPreferences);
   };
 
-  /** Validate the identity fields before sending a basic-profile update. */
+  
   const validateUserInformation = () => {
     if (!profile) return false;
 
@@ -196,7 +196,7 @@ export default function ProfileForm() {
     return true;
   };
 
-  /** Persist the identity and biography section after client-side validation. */
+  
   const handleSaveBasics = async () => {
     if (!profile || !validateUserInformation()) return;
 
@@ -226,7 +226,7 @@ export default function ProfileForm() {
     }
   };
 
-  /** Persist tag changes immediately and apply the returned canonical profile. */
+  
   const handleTagsChange = async (tagIds: number[]) => {
     const data = await profileService.setMyTags(tagIds);
     applyProfileUpdate(data.user);

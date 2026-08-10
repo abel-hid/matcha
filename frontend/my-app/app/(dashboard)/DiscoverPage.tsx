@@ -28,7 +28,7 @@ const DEFAULT_FILTERS: DiscoverFilters = {
   order: 'asc',
 };
 
-/** Render suggested profiles and advanced search using one normalized discovery query. */
+
 export default function DiscoverPage() {
   const [draftFilters, setDraftFilters] = useState<DiscoverFilters>(
     DEFAULT_FILTERS
@@ -74,7 +74,7 @@ export default function DiscoverPage() {
       .finally(() => setLoading(false));
   }, [appliedFilters, page]);
 
-  /** Update one numeric filter draft without mutating the other active fields. */
+  
   const updateNumberFilter = (name: 'minAge' | 'maxAge' | 'minFame' | 'maxFame', value: string) => {
     setDraftFilters((current) => ({
       ...current,
@@ -82,7 +82,7 @@ export default function DiscoverPage() {
     }));
   };
 
-  /** Toggle an interest tag in the pending discovery filter set. */
+  
   const toggleTag = (tagId: number) => {
     setDraftFilters((current) => ({
       ...current,
@@ -92,7 +92,7 @@ export default function DiscoverPage() {
     }));
   };
 
-  /** Normalize the filter form and launch a new discovery request from page one. */
+  
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFilterError('');
@@ -122,7 +122,7 @@ export default function DiscoverPage() {
     });
   };
 
-  /** Restore the default discovery filters and reload the first result page. */
+  
   const resetFilters = () => {
     setDraftFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
@@ -394,7 +394,7 @@ export default function DiscoverPage() {
   );
 }
 
-/** Render a controlled numeric filter input. */
+
 function NumberField({
   label,
   value,

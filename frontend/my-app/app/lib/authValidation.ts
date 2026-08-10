@@ -82,7 +82,7 @@ export const resetPasswordSchema = z.object({
 export type SignupFormData = z.infer<typeof signupSchema>;
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
-/** Normalize text before checking password similarity with account details. */
+
 function normalizeWord(value: string): string {
   return value
     .normalize('NFKD')
@@ -91,7 +91,7 @@ function normalizeWord(value: string): string {
     .replace(/[^\p{L}]/gu, '');
 }
 
-/** Return whether a password contains normalized username, name, or email fragments. */
+
 function passwordUsesAccountDetails(password: string, accountValues: string[]): boolean {
   const normalizedPassword = normalizeWord(password);
   const commonAffixes = ['password', 'matcha', 'welcome', 'love', 'secure'];

@@ -1,5 +1,3 @@
-"""Matched-user date proposal routes and their authorization rules."""
-
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
@@ -18,7 +16,6 @@ DATE_NOTE_MAX_LENGTH = 500
 
 
 def get_available_target(current_user_id, target_user_id):
-    """Return a complete, connected, non-blocked target user when allowed."""
     if current_user_id == target_user_id:
         return None
 
@@ -36,7 +33,6 @@ def get_available_target(current_user_id, target_user_id):
 
 
 def parse_scheduled_for(value):
-    """Parse and validate a future timezone-aware date proposal timestamp."""
     if not isinstance(value, str):
         return None, 'scheduledFor must be an ISO date-time string'
 
@@ -56,7 +52,6 @@ def parse_scheduled_for(value):
 
 
 def validate_text(value, name, maximum, required=True):
-    """Normalize bounded text used by date proposals."""
     if value is None and not required:
         return None, None
 
@@ -74,7 +69,6 @@ def validate_text(value, name, maximum, required=True):
 
 
 def emit_date_event(event):
-    """Push a date update to both participants through their user rooms."""
     serialized = models.date_event_to_dict(event)
     for user_id in (event['proposer_id'], event['recipient_id']):
         socketio.emit(
@@ -89,7 +83,6 @@ def emit_date_event(event):
 @jwt_required()
 @complete_profile_required
 def list_date_events():
-    """Return visible upcoming and historical date proposals for the user."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -107,7 +100,6 @@ def list_date_events():
 @jwt_required()
 @complete_profile_required
 def create_date_event(user_id):
-    """Persist a date proposal and return its database row."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -169,7 +161,6 @@ def create_date_event(user_id):
 @jwt_required()
 @complete_profile_required
 def respond_to_date_event(event_id):
-    """Accept or decline a pending proposal as its recipient."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -222,7 +213,6 @@ def respond_to_date_event(event_id):
 @jwt_required()
 @complete_profile_required
 def cancel_date_event(event_id):
-    """Cancel a pending or accepted future proposal as a participant."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404

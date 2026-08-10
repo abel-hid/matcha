@@ -10,7 +10,6 @@ export const metadata: Metadata = {
   description: 'Discover compatible people, connect, chat, call, and plan dates.',
 };
 
-/** Wrap every route with authentication, notification, and audio-call state. */
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">

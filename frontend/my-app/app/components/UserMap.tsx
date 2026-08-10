@@ -35,7 +35,6 @@ const MAX_ZOOM = 17;
 const MAX_MERCATOR_LATITUDE = 85.05112878;
 
 
-/** Keep a number inside the specified minimum and maximum values. */
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -89,13 +88,11 @@ function unproject(point: Point, zoom: number): MapLocation {
 }
 
 
-/** Build the accessible label shown for a map profile marker. */
 function markerTitle(profile: MapProfile) {
   return `${profile.firstName} ${profile.lastName}, ${profile.age}`;
 }
 
 
-/** Render an interactive map with panning, zooming, markers, and profile popups. */
 export default function UserMap({
   currentUserLocation,
   profiles,
@@ -349,11 +346,6 @@ export default function UserMap({
     if (!mapElement) {
       return;
     }
-
-    /**
-     * Use a native non-passive wheel listener because React wheel listeners
-     * may be passive and cannot reliably call preventDefault().
-     */
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
 
@@ -432,7 +424,6 @@ export default function UserMap({
     });
   };
 
-  /** Finish the current pointer drag operation. */
   const stopDragging = (
     event: PointerEvent<HTMLDivElement>,
   ) => {

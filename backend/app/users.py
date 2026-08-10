@@ -1,5 +1,3 @@
-"""Public profile, visit, like, block, unblock, and report routes."""
-
 from uuid import UUID
 
 from flask import Blueprint, jsonify, request
@@ -15,7 +13,6 @@ users_bp = Blueprint('users', __name__, url_prefix='/api/users')
 
 
 def get_visible_target(current_user_id, target_user_id):
-    """Return a public target only when both profiles are allowed to interact."""
     target = models.get_user_by_id(target_user_id)
     if not target:
         return None
@@ -27,7 +24,6 @@ def get_visible_target(current_user_id, target_user_id):
 
 
 def get_visible_target_by_username(current_user_id, username):
-    """Resolve a visible public target by stable username URL."""
     target = models.get_user_by_username(username)
     if not target:
         return None
@@ -39,7 +35,6 @@ def get_visible_target_by_username(current_user_id, username):
 
 
 def profile_response_data(current_user_id, target):
-    """Build public profile data plus relationship state for the viewer."""
     data = models.user_to_dict(target, include_private=False)
     data['hasLikedThem'] = models.has_liked(current_user_id, target['id'])
     data['theyLikedMe'] = models.has_liked(target['id'], current_user_id)
@@ -52,7 +47,6 @@ def profile_response_data(current_user_id, target):
 @jwt_required()
 @complete_profile_required
 def get_blocked_users():
-    """Return every profile blocked by the authenticated user."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -67,7 +61,6 @@ def get_blocked_users():
 @jwt_required()
 @complete_profile_required
 def get_user_profile(user_id):
-    """Return one authorized public profile by numeric identifier."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -85,7 +78,6 @@ def get_user_profile(user_id):
 @jwt_required()
 @complete_profile_required
 def get_user_profile_by_username(username):
-    """Return one authorized public profile by stable username URL."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -110,7 +102,6 @@ def get_user_profile_by_username(username):
 @jwt_required()
 @complete_profile_required
 def record_profile_visit(user_id):
-    """Record one visit and emit the mandatory real-time notification."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -152,7 +143,6 @@ def record_profile_visit(user_id):
 @jwt_required()
 @complete_profile_required
 def like_user(user_id):
-    """Insert one directional like and clear prior notification suppression."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -193,7 +183,6 @@ def like_user(user_id):
 @jwt_required()
 @complete_profile_required
 def unlike_user(user_id):
-    """Remove one directional like and suppress future notifications after disconnect."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -233,7 +222,6 @@ def unlike_user(user_id):
 @jwt_required()
 @complete_profile_required
 def block_user(user_id):
-    """Create the block and remove both directional likes in one transaction."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -273,7 +261,6 @@ def block_user(user_id):
 @jwt_required()
 @complete_profile_required
 def unblock_user(user_id):
-    """Remove an owned block without restoring the deleted likes."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -288,7 +275,6 @@ def unblock_user(user_id):
 @jwt_required()
 @complete_profile_required
 def report_user(user_id):
-    """Create the one-click fake-account report once per user pair."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404

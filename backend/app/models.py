@@ -1,6 +1,3 @@
-"""Domain data access and serialization using manually written PostgreSQL queries."""
-
-
 from datetime import date, timezone
 from uuid import uuid4
 import re
@@ -18,34 +15,28 @@ PROFILE_LOCK_NAMESPACE = 4242
 
 
 class InvalidTagIdsError(ValueError):
-    """Raised when a tag update contains an identifier outside the fixed catalogue."""
     pass
 
 
 class PhotoLimitError(ValueError):
-    """Raised when a user attempts to exceed the five-photo limit."""
     pass
 
 
 class LastPhotoError(ValueError):
-    """Raised when an operation would remove the final required profile photo."""
     pass
 
 
 class OAuthIdentityConflictError(ValueError):
-    """Raised when one provider identity would be linked to conflicting users."""
     pass
 
 
 # ---------------------------------------------------------------- passwords
 
 def hash_password(password):
-    """Hash a validated password with bcrypt before storage."""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def check_password(password, password_hash):
-    """Safely compare a password with a stored bcrypt hash."""
     if not isinstance(password, str) or not isinstance(password_hash, str):
         return False
 
@@ -55,8 +46,7 @@ def check_password(password, password_hash):
         return False
 
 
-def get_tokens_for_user(user, session_id):
-    """Create access and refresh JWTs bound to one revocable session."""
+def get_tokens_for_user(user, session_id): # Return a new access and refresh token pair for a user and session.
     claims = {
         'sid': session_id,
         'ver': user['token_version'],
@@ -68,15 +58,7 @@ def get_tokens_for_user(user, session_id):
     )
 
 
-def to_iso_utc(dt):
-    """
-    Postgres TIMESTAMP columns are naive -- dt.isoformat() alone produces
-    something like '2026-07-23T14:00:00' with no timezone marker. JS's
-    `new Date(...)` then parses that as *local* time, not UTC, silently
-    shifting every timestamp by the browser's UTC offset (e.g. exactly 1h
-    off for a GMT+1 user). Stamping it explicitly as UTC here fixes that at
-    the source instead of needing every frontend consumer to know to adjust.
-    """
+def to_iso_utc(dt): # Convert a datetime to an ISO 8601 string in UTC.
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -89,22 +71,18 @@ def to_iso_utc(dt):
 # --------------------------------------------------------------------- users
 
 def get_user_by_id(user_id):
-    """Return one user row by primary key."""
     return query_one("SELECT * FROM users WHERE id = %s", (user_id,))
 
 
 def get_user_by_username(username):
-    """Return one user row by unique username."""
     return query_one("SELECT * FROM users WHERE username = %s", (username,))
 
 
 def get_user_by_email(email):
-    """Return one user row by normalized email address."""
     return query_one("SELECT * FROM users WHERE email = %s", (email,))
 
 
 def create_user(username, email, password, first_name, last_name):
-    """Insert a local account with a bcrypt password hash."""
     return execute(
         """
         INSERT INTO users (username, email, password_hash, first_name, last_name)
@@ -125,7 +103,6 @@ _UPDATABLE_USER_FIELDS = {
 
 
 def update_user_fields(user_id, fields: dict):
-    """Update only the explicit allow-list of editable user columns."""
     fields = {k: v for k, v in fields.items() if k in _UPDATABLE_USER_FIELDS}
     if not fields:
         return
@@ -135,7 +112,6 @@ def update_user_fields(user_id, fields: dict):
 
 
 def delete_user(user_id):
-    """Remove or invalidate user safely."""
     execute("DELETE FROM users WHERE id = %s", (user_id,))
 
 
@@ -155,7 +131,6 @@ def create_session(user_id, expires_at):
 
 
 def is_session_active(session_id, user_id, token_version):
-    """Return whether session active is true."""
     if not session_id or user_id is None or token_version is None:
         return False
 
@@ -203,7 +178,6 @@ def revoke_session(session_id):
 
 
 def reset_password_and_revoke_sessions(user_id, password, token_version):
-    """Replace the password, increment token state, and revoke all sessions atomically."""
     with get_conn() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -229,12 +203,10 @@ def reset_password_and_revoke_sessions(user_id, password, token_version):
 # ---------------------------------------------------------------------- tags
 
 def get_all_tags():
-    """Return the fixed reusable interest catalogue."""
     return query_all("SELECT * FROM tags ORDER BY name")
 
 
 def get_tags_for_user(user_id):
-    """Return a user’s selected reusable interests in display order."""
     return query_all(
         """
         SELECT t.* FROM tags t
@@ -247,7 +219,6 @@ def get_tags_for_user(user_id):
 
 
 def set_user_tags(user_id, tag_ids):
-    """Replace a user's reusable tags atomically after validating every identifier."""
     unique_tag_ids = list(dict.fromkeys(tag_ids))
 
     with get_conn() as conn:
@@ -272,7 +243,6 @@ def set_user_tags(user_id, tag_ids):
 # -------------------------------------------------------------------- photos
 
 def get_photos_for_user(user_id):
-    """Return a user’s photos with the primary image first."""
     return query_all(
         "SELECT * FROM photos WHERE user_id = %s ORDER BY is_primary DESC, position, id",
         (user_id,),
@@ -280,18 +250,15 @@ def get_photos_for_user(user_id):
 
 
 def count_photos(user_id):
-    """Return the current photos count."""
     row = query_one("SELECT COUNT(*) AS c FROM photos WHERE user_id = %s", (user_id,))
     return row['c'] if row else 0
 
 
 def get_primary_photo(user_id):
-    """Return the single primary photo for a user, when present."""
     return query_one("SELECT * FROM photos WHERE user_id = %s AND is_primary = true", (user_id,))
 
 
 def add_photo(user_id, filename):
-    """Insert a photo under a per-user lock while enforcing the five-photo limit."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -331,7 +298,6 @@ def add_photo(user_id, filename):
 
 
 def replace_photo_filename(user_id, photo_id, filename):
-    """Swap an owned photo filename while returning the previous file for cleanup."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
@@ -365,7 +331,6 @@ def replace_photo_filename(user_id, photo_id, filename):
 
 
 def delete_photo_and_promote(user_id, photo_id):
-    """Delete a photo atomically and promote a replacement primary image when needed."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(

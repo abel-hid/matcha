@@ -23,7 +23,7 @@ interface ProfileLocationProps {
   onChange: (profile: User) => void;
 }
 
-/** Handle explicit GPS consent, permission diagnostics, and manual location fallback. */
+
 export default function ProfileLocation({ location, gpsConsent, onChange }: ProfileLocationProps) {
   const [consentChecked, setConsentChecked] = useState(gpsConsent);
   const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
@@ -42,7 +42,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
   useEffect(() => {
     let permissionStatus: PermissionStatus | null = null;
 
-    /** Read the browser geolocation permission state when that API is available. */
+    
 
     const loadPermission = async () => {
       if (!navigator.permissions?.query) return;
@@ -63,7 +63,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
     };
   }, []);
 
-  /** Request location consent, obtain coordinates, and save a privacy-safe label. */
+  
   const handleUseGps = async () => {
     if (!consentChecked) {
       setError('Confirm GPS consent before requesting your location.');
@@ -134,7 +134,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
     );
   };
 
-  /** Resolve a typed place name into selectable geocoding candidates. */
+  
   const handleManualSearch = async () => {
     const query = manualInput.trim();
     if (!query) {
@@ -162,7 +162,7 @@ export default function ProfileLocation({ location, gpsConsent, onChange }: Prof
     }
   };
 
-  /** Persist the selected manual location after validating its coordinates. */
+  
   const handleManualSave = async () => {
     if (!selectedResult) {
       setError('Search for a location and select one result before saving.');

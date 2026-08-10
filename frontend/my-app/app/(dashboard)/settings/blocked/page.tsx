@@ -19,7 +19,7 @@ interface BlockEntry {
   user: BlockedUser;
 }
 
-/** Render this application route and delegate its feature logic to the page component. */
+
 export default function BlockedUsersPage() {
   const [blocks, setBlocks] = useState<BlockEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +35,7 @@ export default function BlockedUsersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  /** Remove a block and update the list only after the API confirms success. */
+  
   const handleUnblock = async (userId: number) => {
     setBusyId(userId);
     setError('');

@@ -1,5 +1,3 @@
-"""Private profile editing, tags, photos, location, and activity routes."""
-
 from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, request

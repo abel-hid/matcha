@@ -6,14 +6,14 @@ import { apiErrorMessage } from '@/app/lib/apiError';
 import { authService } from '@/app/services/api';
 import AuthShowcase from './Authshowcase'
 
-/** Submit a neutral password-reset request without exposing account existence. */
+
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
-  /** Request a reset email while preserving the backend’s account-enumeration protection. */
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');

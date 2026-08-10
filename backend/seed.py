@@ -1,15 +1,3 @@
-"""
-Generate the deterministic Matcha evaluation dataset.
-
-The root Docker startup executes this command automatically:
-
-    ./start.sh
-
-The script has no command-line options and always creates exactly 500 profiles.
-
-The command preserves non-seed accounts, replaces accounts whose usernames
-start with ``seed_``, and creates exactly 500 verified, complete profiles.
-"""
 import random
 import sys
 import shutil
@@ -137,12 +125,10 @@ PHOTO_COLORS = (
 )
 
 def username_for(index):
-    """Return the stable seed username for one one-based index."""
     return f'seed_{index:03d}'
 
 
 def birth_date_for_age(age, rng, today=None):
-    """Build a deterministic birth date for the requested age."""
     today = today or date.today()
     month = rng.randint(1, 12)
 
@@ -160,7 +146,6 @@ def birth_date_for_age(age, rng, today=None):
 
 
 def build_seed_profiles(count, random_seed=SEED_RANDOM_VALUE):
-    """Build deterministic complete profile values for all 500 seed users."""
     rng = random.Random(random_seed)
     today = date.today()
     profiles = []
@@ -218,7 +203,6 @@ def build_seed_profiles(count, random_seed=SEED_RANDOM_VALUE):
 
 
 def build_like_pairs(user_ids):
-    """Build deterministic directional likes and mutual matches."""
     count = len(user_ids)
     likes = set()
 
@@ -242,7 +226,6 @@ def build_like_pairs(user_ids):
 
 
 def build_view_rows(user_ids, usernames, random_seed=SEED_RANDOM_VALUE):
-    """Build deterministic profile visit history."""
     rng = random.Random(random_seed + 99)
     count = len(user_ids)
     rows = []
@@ -277,14 +260,12 @@ def build_view_rows(user_ids, usernames, random_seed=SEED_RANDOM_VALUE):
 
 
 def render_seed_photo(profile, photo_number, destination):
-    """Create one plain solid-color square image for a seed profile."""
     rng = random.Random(SEED_RANDOM_VALUE + profile['index'] + photo_number)
     color = rng.choice(PHOTO_COLORS)
     Image.new('RGB', (360, 360), color).save(destination, format='PNG')
 
 
 def prepare_seed_photos(profiles, directory):
-    """Generate seed photos in a staging directory before database writes."""
     photo_rows = []
     filenames = set()
 
@@ -308,7 +289,6 @@ def prepare_seed_photos(profiles, directory):
 
 
 def remove_unused_seed_photos(expected_filenames):
-    """Remove obsolete generated photos after reseeding."""
     if not UPLOAD_FOLDER.exists():
         return
 
@@ -318,7 +298,6 @@ def remove_unused_seed_photos(expected_filenames):
 
 
 def install_seed_photos(source_directory, expected_filenames):
-    """Move staged seed photos into persistent upload storage."""
     UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 
     for filename in expected_filenames:
@@ -334,7 +313,6 @@ def install_seed_photos(source_directory, expected_filenames):
 
 
 def load_tag_ids(cursor):
-    """Load every fixed tag identifier and fail if schema setup is incomplete."""
     cursor.execute(
         'SELECT id, name FROM tags WHERE name = ANY(%s::TEXT[])',
         (list(TAG_NAMES),),
@@ -351,7 +329,6 @@ def load_tag_ids(cursor):
 
 
 def insert_seed_data(profiles, photo_rows):
-    """Replace seed accounts and related rows in one database transaction."""
     Config.validate_database()
     password_hash = bcrypt.hashpw(
         SEED_PASSWORD.encode('utf-8'),
@@ -609,7 +586,6 @@ def insert_seed_data(profiles, photo_rows):
 
 
 def seed_database():
-    """Generate and install the exact 500-profile evaluation dataset."""
     profiles = build_seed_profiles(
         SEED_PROFILE_COUNT,
         random_seed=SEED_RANDOM_VALUE,
@@ -630,7 +606,6 @@ def seed_database():
 
 
 def main():
-    """Run the deterministic seed command and print a concise result."""
     if len(sys.argv) != 1:
         raise SystemExit(
             'seed.py does not accept arguments; it always creates exactly 500 profiles'

@@ -1,5 +1,3 @@
-"""Socket.IO presence, conversation state, notifications, and audio-call signaling."""
-
 from collections import defaultdict
 from threading import Lock
 from uuid import uuid4

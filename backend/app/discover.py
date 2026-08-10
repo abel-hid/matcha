@@ -1,5 +1,3 @@
-"""Suggested-profile browsing, advanced search filters, sorting, and map results."""
-
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -23,7 +21,6 @@ MAP_PAGE_SIZE = 500
 
 
 def parse_integer_argument(name, default, minimum, maximum):
-    """Parse and bound an integer query parameter."""
     raw_value = request.args.get(name)
     if raw_value in (None, ''):
         return default, None
@@ -40,7 +37,6 @@ def parse_integer_argument(name, default, minimum, maximum):
 
 
 def parse_tag_ids():
-    """Parse unique reusable tag identifiers from the query string."""
     raw_value = request.args.get('tagIds', '').strip()
     if not raw_value:
         return [], None
@@ -70,7 +66,6 @@ def parse_tag_ids():
 
 
 def parse_discovery_filters(*, include_pagination):
-    """Validate all browse and advanced-search query parameters."""
     min_age, error = parse_integer_argument('minAge', 18, 18, 80)
     if error:
         return None, error
@@ -139,7 +134,6 @@ def parse_discovery_filters(*, include_pagination):
 
 
 def criteria_to_dict(filters):
-    """Serialize normalized discovery criteria for the frontend."""
     return {
         'minAge': filters['min_age'],
         'maxAge': filters['max_age'],
@@ -156,7 +150,6 @@ def criteria_to_dict(filters):
 @jwt_required()
 @complete_profile_required
 def discover_profiles():
-    """Return compatible, filtered, sorted, paginated profile suggestions."""
     current_user_id = int(get_jwt_identity())
     filters, error = parse_discovery_filters(include_pagination=True)
     if error:
@@ -182,7 +175,6 @@ def discover_profiles():
 @jwt_required()
 @complete_profile_required
 def discover_map():
-    """Return privacy-rounded compatible profile coordinates for the map."""
     current_user_id = int(get_jwt_identity())
     filters, error = parse_discovery_filters(include_pagination=False)
     if error:

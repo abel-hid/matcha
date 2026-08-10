@@ -1,5 +1,3 @@
-"""Central validation and normalization rules shared by API routes."""
-
 import re
 import unicodedata
 from datetime import date
@@ -288,4 +286,3 @@ def _normalize_word(value):
     """Normalize text for case-insensitive password similarity checks."""
     normalized = unicodedata.normalize('NFKD', value).casefold()
     return ''.join(character for character in normalized if character.isalpha())
-

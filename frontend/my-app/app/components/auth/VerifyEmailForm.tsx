@@ -8,7 +8,7 @@ import { authService } from '@/app/services/api';
 
 type Status = 'checking' | 'success' | 'already' | 'error';
 
-/** Verify an email token and provide controlled retry states. */
+
 export default function VerifyEmailForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');

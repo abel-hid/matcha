@@ -1,5 +1,3 @@
-"""Connected-user conversation routes, unread counts, and real-time delivery."""
-
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 
@@ -16,7 +14,6 @@ MAX_PAGE_SIZE = 100
 
 
 def get_available_target(current_user_id, target_user_id):
-    """Return a complete, connected, non-blocked target user when allowed."""
     if current_user_id == target_user_id:
         return None
 
@@ -34,7 +31,6 @@ def get_available_target(current_user_id, target_user_id):
 
 
 def parse_page_argument(name, default, minimum, maximum):
-    """Parse a positive pagination value with an upper bound."""
     raw_value = request.args.get(name)
     if raw_value in (None, ''):
         return default, None
@@ -54,7 +50,6 @@ def parse_page_argument(name, default, minimum, maximum):
 @jwt_required()
 @complete_profile_required
 def list_conversations():
-    """Return message contacts with latest message and unread state."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -74,7 +69,6 @@ def list_conversations():
 @jwt_required()
 @complete_profile_required
 def unread_message_count():
-    """Return the unread message total for the current user."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -88,7 +82,6 @@ def unread_message_count():
 @jwt_required()
 @complete_profile_required
 def get_conversation(user_id):
-    """Return one authorized conversation in chronological pages."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -148,7 +141,6 @@ def get_conversation(user_id):
 @jwt_required()
 @complete_profile_required
 def send_message(user_id):
-    """Persist and immediately emit a message between connected users."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
@@ -213,7 +205,6 @@ def send_message(user_id):
 @jwt_required()
 @complete_profile_required
 def mark_conversation_read(user_id):
-    """Mark incoming messages as read and emit delivery receipts."""
     current_user = get_authenticated_user()
     if not current_user:
         return jsonify({'message': 'User not found'}), 404
